@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@langchain/langgraph": "^0.2.63",
+    "@web3-storage/w3up-client": "^17.2.0",
     "ai": "^4.3.4",
     "langchain": "^0.3.21",
     "next": "15.2.5",

@@ -6,6 +6,39 @@ const lilypadClient = new OpenAI({
   apiKey: process.env.ANURA_API_KEY || 'placeholder-key', // Use environment variable in production
 });
 
+// Parse SSE data and extract assistant content
+async function* parseSSEResponse(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          
+          if (content !== null && content !== undefined) {
+            yield content;
+          }
+        } catch (e) {
+          console.error('Error parsing SSE data:', e);
+        }
+      }
+    }
+  }
+}
+
 // Main chat processing function
 export async function POST(req: Request) {
   try {
@@ -38,15 +71,36 @@ export async function POST(req: Request) {
       })
     });
     
-    // Check if the response is ok and forward the stream
+    // Check if the response is ok
     if (!response.ok) {
       throw new Error(`API call failed with status: ${response.status}`);
     }
     
-    // Pass through the response directly
-    return new Response(response.body, {
+    // Create a transformed stream that only includes the assistant's content
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is null');
+    }
+
+    const transformedStream = new ReadableStream({
+      async start(controller) {
+        try {
+          const parser = parseSSEResponse(reader);
+          for await (const content of parser) {
+            controller.enqueue(new TextEncoder().encode(content));
+          }
+          controller.close();
+        } catch (error) {
+          console.error('Stream processing error:', error);
+          controller.error(error);
+        }
+      }
+    });
+    
+    // Return the transformed stream with proper headers
+    return new Response(transformedStream, {
       headers: {
-        'Content-Type': 'text/event-stream',
+        'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       },
