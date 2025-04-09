@@ -28,38 +28,21 @@ interface ChatConversation {
 }
 
 /**
- * Check if a string is valid base64
- * @param str The string to check
- * @returns True if the string is valid base64
+ * Check if a string appears to be valid base64
+ * @param str String to check
+ * @returns Whether the string appears to be valid base64
  */
 function isValidBase64(str: string): boolean {
-  try {
-    return btoa(atob(str)) === str;
-  } catch (err) {
-    // If there's an error, it's not valid base64
-    return false;
-  }
-}
-
-// Define a mock client interface
-interface MockClient {
-  uploadFile: (file: Blob | File) => Promise<{ toString: () => string }>;
+  if (!str) return false;
+  // Check if string only contains valid base64 characters
+  return /^[A-Za-z0-9+/=]+$/.test(str.trim());
 }
 
 /**
  * Initialize the Storacha client using private key and proof
- * This approach works for both persistent and ephemeral environments
- * @returns Storacha client instance or mock client in development
+ * @returns Storacha client instance
  */
-export async function initStorachaClient(): Promise<Client.Client | MockClient> {
-  // Always use mock client in development
-  if (process.env.NODE_ENV === 'development') {
-    console.warn('Using mock Storacha client in development mode');
-    return {
-      uploadFile: async () => ({ toString: () => `mock-cid-${Date.now()}` }),
-    };
-  }
-  
+export async function initStorachaClient() {
   try {
     // Load the client with a specific private key
     const privateKey = process.env.STORACHA_KEY;
@@ -72,44 +55,43 @@ export async function initStorachaClient(): Promise<Client.Client | MockClient> 
     if (!proofString) {
       throw new Error("STORACHA_PROOF environment variable is not set");
     }
+
+    // Debugging info for credentials
+    console.log(`STORACHA_KEY first 10 chars: ${privateKey.substring(0, 10)}...`);
+    console.log(`STORACHA_PROOF is ${proofString.length} characters long`);
+    console.log(`STORACHA_PROOF appears to be valid base64: ${isValidBase64(proofString)}`);
     
     // Parse the private key
-    try {
-      const principal = Signer.parse(privateKey);
-      
-      // Create an in-memory store
-      const store = new StoreMemory();
-      
-      // Create the client with the principal and store
-      const client = await Client.create({ principal, store });
-      
-      // Parse the UCAN proof from environment variables
-      try {
-        const proof = await Proof.parse(proofString);
-        
-        // Add the space to the client
-        const space = await client.addSpace(proof);
-        
-        // Set the current space
-        await client.setCurrentSpace(space.did());
-        
-        console.log(`Storacha client initialized with space: ${space.did()}`);
-        
-        return client;
-      } catch (proofError: unknown) {
-        const errorMessage = proofError instanceof Error 
-          ? proofError.message 
-          : 'Unknown error';
-        throw new Error(`Failed to parse STORACHA_PROOF: ${errorMessage}. Make sure it's generated with 'w3 delegation create <did> --base64'`);
-      }
-    } catch (keyError: unknown) {
-      const errorMessage = keyError instanceof Error 
-        ? keyError.message 
-        : 'Unknown error';
-      throw new Error(`Failed to parse STORACHA_KEY: ${errorMessage}. Make sure it's generated with 'w3 key create'`);
-    }
-  } catch (error) {
+    const principal = Signer.parse(privateKey);
+    
+    // Create an in-memory store
+    const store = new StoreMemory();
+    
+    // Create the client with the principal and store
+    const client = await Client.create({ principal, store });
+    
+    // Parse the UCAN proof from environment variables
+    const proof = await Proof.parse(proofString);
+    
+    // Add the space to the client
+    const space = await client.addSpace(proof);
+    
+    // Set the current space
+    await client.setCurrentSpace(space.did());
+    
+    console.log(`Storacha client initialized with space: ${space.did()}`);
+    
+    return client;
+  } catch (error: unknown) {
     console.error('Error initializing Storacha client:', error);
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Falling back to mock client due to error:', error instanceof Error ? error.message : String(error));
+      return {
+        uploadFile: async () => ({ toString: () => `mock-cid-${Date.now()}` }),
+      };
+    }
+    
     throw error;
   }
 }
@@ -119,7 +101,7 @@ export async function initStorachaClient(): Promise<Client.Client | MockClient> 
  * @param conversation The chat conversation to store
  * @returns The CID of the stored conversation
  */
-export async function storeConversation(conversation: ChatConversation): Promise<string> {
+export async function storeConversation(conversation: ChatConversation) {
   try {
     const client = await initStorachaClient();
     
@@ -141,13 +123,12 @@ export async function storeConversation(conversation: ChatConversation): Promise
     
     console.log(`Conversation ${conversation.id} uploaded to Storacha with CID: ${cid}`);
     return cid.toString();
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error storing conversation:', error);
     
-    // Return a mock CID in development to allow the app to work
     if (process.env.NODE_ENV === 'development') {
       const mockCid = `mock-cid-${conversation.id}-${Date.now()}`;
-      console.warn(`Using mock CID in development: ${mockCid}`);
+      console.warn(`Failed to store, returning mock CID in development: ${mockCid}`);
       return mockCid;
     }
     
@@ -196,16 +177,15 @@ export async function addMessageToConversation(
     
     // Store the updated conversation
     return await storeConversation(updatedConversation);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error adding message to conversation:', error);
     
-    // Return a mock CID in development to allow the app to work
     if (process.env.NODE_ENV === 'development') {
       const mockCid = `mock-cid-${conversation.id}-${Date.now()}`;
-      console.warn(`Using mock CID in development: ${mockCid}`);
+      console.warn(`Failed to add message, returning mock CID in development: ${mockCid}`);
       return mockCid;
     }
     
     throw error;
   }
-} 
+}

@@ -129,11 +129,16 @@ export default function Home() {
       });
       
       // Store the response data right away if successful
-      let userMsgResult;
+      let userMsgResult = null;
       if (storeUserMessageResponse.ok) {
-        userMsgResult = await storeUserMessageResponse.json();
-        setCurrentConversation(userMsgResult.conversation);
-        setConversationCid(userMsgResult.cid);
+        try {
+          const responseData = await storeUserMessageResponse.json();
+          userMsgResult = responseData;
+          setCurrentConversation(responseData.conversation);
+          setConversationCid(responseData.cid);
+        } catch (e) {
+          console.warn('Failed to parse storage response JSON', e);
+        }
       }
 
       const response = await fetch('/api/chat', {
@@ -185,7 +190,8 @@ export default function Home() {
 
       // Store assistant message via API
       try {
-        const updatedConvWithUserMsg = userMsgResult 
+        // Use the conversation object we already have instead of trying to parse the response again
+        const updatedConvWithUserMsg = userMsgResult && userMsgResult.conversation
           ? userMsgResult.conversation 
           : updatedConversation;
           
