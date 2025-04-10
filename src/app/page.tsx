@@ -27,6 +27,8 @@ export default function Home() {
   const [currentConversation, setCurrentConversation] = useState<ChatConversation | null>(null);
   const [conversationCid, setConversationCid] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [isRagMode, setIsRagMode] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Create a new conversation when the component loads
@@ -91,43 +93,12 @@ export default function Home() {
   const handleFileUpload = (file: File) => {
     setUploadedFile(file);
     console.log('File uploaded in parent component:', file.name);
-    
-    // Process the file for RAG
-    processFileForRAG(file);
   };
-
-  // Process file for RAG
-  const processFileForRAG = async (file: File) => {
-    // In a real implementation, this would:
-    // 1. Extract text from the file
-    // 2. Create embeddings
-    // 3. Store the embeddings for retrieval
-    
-    // For now, we'll just simulate the processing
-    console.log(`Processing file for RAG: ${file.name}`);
-    
-    // Create a FormData object to send the file to the backend (for future implementation)
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    // Example of how you might send this to an API endpoint in the future
-    /* 
-    try {
-      const response = await fetch('/api/process-document', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to process document');
-      }
-      
-      const result = await response.json();
-      console.log('Document processed:', result);
-    } catch (error) {
-      console.error('Error processing document:', error);
-    }
-    */
+  
+  const handleDocumentProcessed = (docId: string) => {
+    setDocumentId(docId);
+    setIsRagMode(true);
+    console.log('Document processed for RAG with ID:', docId);
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -185,97 +156,170 @@ export default function Home() {
         }
       }
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: [...messages, userMessage],
-          // Include uploaded file information if available
-          uploadedFile: uploadedFile ? {
-            name: uploadedFile.name,
-            type: uploadedFile.type,
-            size: uploadedFile.size,
-            lastModified: uploadedFile.lastModified
-          } : null,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Create a new ID for the assistant message
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '',
-      };
-
-      // Add empty assistant message to show typing indicator
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // Read the stream
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No reader');
-
-      let result = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        // Process the received chunk
-        const chunk = new TextDecoder().decode(value);
-        result += chunk;
-
-        // Update the assistant message with the received chunk
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessage.id
-              ? { ...msg, content: msg.content + chunk }
-              : msg
-          )
-        );
-      }
-
-      // Store assistant message via API
-      try {
-        // Use the conversation object we already have instead of trying to parse the response again
-        const updatedConvWithUserMsg = userMsgResult && userMsgResult.conversation
-          ? userMsgResult.conversation 
-          : updatedConversation;
-          
-        const storeAssistantMessageResponse = await fetch('/api/storage', {
+      let response;
+      
+      if (isRagMode && documentId) {
+        // Use RAG API for response
+        response = await fetch('/api/rag/query', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            action: 'addMessage',
-            data: {
-              conversation: updatedConvWithUserMsg,
-              message: {
-                id: assistantMessage.id,
-                role: assistantMessage.role,
-                content: result,
-                timestamp: new Date().toISOString()
+            documentId,
+            query: input,
+            useAgent: true, // Use the LangGraph agent
+          }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Create a new assistant message with the RAG response
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: result.response,
+        };
+        
+        // Update messages state
+        setMessages((prev) => [...prev, assistantMessage]);
+        
+        // Store assistant message via API
+        try {
+          // Use the conversation object we already have instead of trying to parse the response again
+          const updatedConvWithUserMsg = userMsgResult && userMsgResult.conversation
+            ? userMsgResult.conversation 
+            : updatedConversation;
+            
+          const storeAssistantMessageResponse = await fetch('/api/storage', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'addMessage',
+              data: {
+                conversation: updatedConvWithUserMsg,
+                message: {
+                  id: assistantMessage.id,
+                  role: assistantMessage.role,
+                  content: assistantMessage.content,
+                  timestamp: new Date().toISOString()
+                }
               }
-            }
+            }),
+          });
+  
+          if (storeAssistantMessageResponse.ok) {
+            const assistantMsgResult = await storeAssistantMessageResponse.json();
+            setCurrentConversation(assistantMsgResult.conversation);
+            setConversationCid(assistantMsgResult.cid);
+            console.log(`Conversation stored with CID: ${assistantMsgResult.cid}`);
+          } else {
+            console.warn('Failed to store assistant message');
+          }
+        } catch (storageError) {
+          console.error('Error storing conversation:', storageError);
+          // Continue even if storage fails
+        }
+      } else {
+        // Use standard chat API
+        response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: [...messages, userMessage],
+            // Include uploaded file information if available
+            uploadedFile: uploadedFile ? {
+              name: uploadedFile.name,
+              type: uploadedFile.type,
+              size: uploadedFile.size,
+              lastModified: uploadedFile.lastModified
+            } : null,
           }),
         });
 
-        if (storeAssistantMessageResponse.ok) {
-          const assistantMsgResult = await storeAssistantMessageResponse.json();
-          setCurrentConversation(assistantMsgResult.conversation);
-          setConversationCid(assistantMsgResult.cid);
-          console.log(`Conversation stored with CID: ${assistantMsgResult.cid}`);
-        } else {
-          console.warn('Failed to store assistant message');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      } catch (storageError) {
-        console.error('Error storing conversation:', storageError);
-        // Continue even if storage fails
+
+        // Create a new ID for the assistant message
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: '',
+        };
+
+        // Add empty assistant message to show typing indicator
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        // Read the stream
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No reader');
+
+        let result = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Process the received chunk
+          const chunk = new TextDecoder().decode(value);
+          result += chunk;
+
+          // Update the assistant message with the received chunk
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessage.id
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            )
+          );
+        }
+        
+        // Store assistant message via API
+        try {
+          // Use the conversation object we already have instead of trying to parse the response again
+          const updatedConvWithUserMsg = userMsgResult && userMsgResult.conversation
+            ? userMsgResult.conversation 
+            : updatedConversation;
+            
+          const storeAssistantMessageResponse = await fetch('/api/storage', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'addMessage',
+              data: {
+                conversation: updatedConvWithUserMsg,
+                message: {
+                  id: assistantMessage.id,
+                  role: assistantMessage.role,
+                  content: result,
+                  timestamp: new Date().toISOString()
+                }
+              }
+            }),
+          });
+  
+          if (storeAssistantMessageResponse.ok) {
+            const assistantMsgResult = await storeAssistantMessageResponse.json();
+            setCurrentConversation(assistantMsgResult.conversation);
+            setConversationCid(assistantMsgResult.cid);
+            console.log(`Conversation stored with CID: ${assistantMsgResult.cid}`);
+          } else {
+            console.warn('Failed to store assistant message');
+          }
+        } catch (storageError) {
+          console.error('Error storing conversation:', storageError);
+          // Continue even if storage fails
+        }
       }
     } catch (error) {
       console.error('Error:', error);
@@ -300,11 +344,18 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
             DappaDiary - NotebookLM Recreation
           </h1>
-          {conversationCid && (
-            <div className="text-xs text-gray-600 dark:text-gray-400">
-              CID: {conversationCid.substring(0, 10)}...
-            </div>
-          )}
+          <div className="flex items-center space-x-4">
+            {isRagMode && (
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full dark:bg-blue-900 dark:text-blue-200">
+                RAG Mode Active
+              </span>
+            )}
+            {conversationCid && (
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                CID: {conversationCid.substring(0, 10)}...
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -325,14 +376,20 @@ export default function Home() {
                 <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-4">
                   Upload a document to get started with RAG
                 </h3>
-                <FileUploadDemo onFileUpload={handleFileUpload} />
+                <FileUploadDemo 
+                  onFileUpload={handleFileUpload} 
+                  onDocumentProcessed={handleDocumentProcessed}
+                />
               </div>
               
-              {uploadedFile && (
+              {uploadedFile && documentId && (
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                   <h4 className="font-medium text-blue-700 dark:text-blue-300">RAG Mode Activated</h4>
                   <p className="text-sm text-blue-600 dark:text-blue-400">
                     Using document: {uploadedFile.name}
+                  </p>
+                  <p className="text-xs text-blue-500 dark:text-blue-500 mt-1">
+                    Document ID: {documentId.substring(0, 8)}...
                   </p>
                 </div>
               )}
@@ -367,7 +424,9 @@ export default function Home() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={uploadedFile ? `Ask about ${uploadedFile.name}...` : "Type your message..."}
+            placeholder={isRagMode && uploadedFile 
+              ? `Ask about ${uploadedFile.name}...` 
+              : "Type your message..."}
             className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200"
             disabled={isLoading}
           />

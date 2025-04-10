@@ -13,7 +13,10 @@
   },
   "dependencies": {
     "@langchain/langgraph": "^0.2.63",
+    "@recallnet/chains": "^0.0.7",
+    "@recallnet/sdk": "^0.0.8",
     "@tabler/icons-react": "^3.31.0",
+    "@types/uuid": "^10.0.0",
     "@web3-storage/w3up-client": "^17.2.0",
     "ai": "^4.3.4",
     "clsx": "^2.1.1",
@@ -25,6 +28,8 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
     "tailwind-merge": "^3.2.0",
+    "text-encoding": "^0.7.0",
+    "uuid": "^11.1.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
