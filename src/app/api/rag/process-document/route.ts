@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processDocument } from '@/lib/rag/document-processor';
+import { generateContentHash, findDocumentByHash } from '@/lib/rag/document-registry';
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,11 +15,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Process the document
+    // Process the document (now with built-in deduplication)
     const documentId = await processDocument(file);
 
-    // Return the document ID for future reference
-    return NextResponse.json({ documentId });
+    // Check if the checksum parameter was provided for client-side deduplication checks
+    const skipDeduplication = formData.get('skipDeduplication') === 'true';
+    
+    // Return with appropriate status
+    return NextResponse.json({ 
+      documentId,
+      message: "Document processed successfully"
+    });
+    
   } catch (error) {
     console.error('Error processing document:', error);
     return NextResponse.json(

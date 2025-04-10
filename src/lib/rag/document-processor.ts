@@ -10,6 +10,12 @@ import {
   DocumentMetadata,
   cosineSimilarity
 } from './storacha-vector-storage';
+import {
+  generateContentHash,
+  findDocumentByHash,
+  addDocumentToRegistry,
+  ProcessedDocument
+} from './document-registry';
 
 // Text chunking function 
 function chunkText(text: string, maxChunkSize: number = 1000): string[] {
@@ -79,12 +85,39 @@ function getFlattenedDocumentIndex(): Record<string, string> {
  */
 export async function processDocument(file: File): Promise<string> {
   try {
-    // Extract text from the document
+    // Extract text from the document for hashing
     console.log(`Extracting text from ${file.name}...`);
     const text = await extractTextFromDocument(file);
     
+    // Generate a hash of the document content
+    const contentHash = generateContentHash(text);
+    console.log(`Document content hash: ${contentHash}`);
+    
+    // Check if this document has been processed before
+    const existingDocument = await findDocumentByHash(contentHash);
+    if (existingDocument) {
+      console.log(`Document with hash ${contentHash} already exists with ID: ${existingDocument.id}`);
+      
+      // Make sure we have the document in our local indices
+      if (!documentIndices[existingDocument.id]) {
+        documentIndices[existingDocument.id] = {
+          text: existingDocument.id + '_text', // These are placeholders
+          metadata: existingDocument.id + '_metadata',
+          chunkMap: existingDocument.processing.chunkMapCid
+        };
+      }
+      
+      return existingDocument.id;
+    }
+    
+    // If not found, proceed with normal processing
+    console.log('Document not found in registry. Processing...');
+    
     // Generate document ID
     const documentId = uuidv4();
+    
+    // Start time tracking for processing metrics
+    const processingStartTime = Date.now();
     
     // Store the original text in Storacha
     const textCid = await storeDocumentText(documentId, text, {
@@ -146,7 +179,32 @@ export async function processDocument(file: File): Promise<string> {
     // Store the updated document index
     documentIndexCid = await storeDocumentIndex(getFlattenedDocumentIndex());
     
+    // Calculate total processing time
+    const processingEndTime = Date.now();
+    const processingTime = processingEndTime - processingStartTime;
+    
+    // Add document to registry for future deduplication
+    const processedDocument: ProcessedDocument = {
+      id: documentId,
+      contentHash,
+      metadata: {
+        title: file.name,
+        filename: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        uploadedAt: new Date().toISOString()
+      },
+      processing: {
+        chunkCount: chunks.length,
+        chunkMapCid,
+        processingTime
+      }
+    };
+    
+    await addDocumentToRegistry(processedDocument);
+    
     console.log(`Document processed and stored with ID: ${documentId}`);
+    console.log(`Processing time: ${processingTime}ms`);
     console.log(`Document index CID: ${documentIndexCid}`);
     
     return documentId;

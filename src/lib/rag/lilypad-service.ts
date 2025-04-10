@@ -41,18 +41,68 @@ function getEmbeddingWorker() {
 
 /**
  * Create embeddings for an array of texts
- * This function automatically chooses between client-side (web worker) 
- * and server-side (Transformers.js) embedding generation based on the environment
+ * This function prioritizes the server-side Transformers.js embedding generation
+ * to ensure consistency with the stored embeddings
  */
 export async function createEmbeddings(texts: string[]): Promise<number[][]> {
-  // Check if we're in a browser environment
-  if (typeof window === 'undefined') {
-    console.log(`Generating embeddings for ${texts.length} texts using server-side Transformers.js`);
-    return await createServerSideEmbeddings(texts);
+  console.log(`[Embeddings] Generating embeddings for ${texts.length} texts`);
+  
+  // Always use server-side embeddings to ensure consistency
+  try {
+    console.log(`[Embeddings] Using server-side Transformers.js for embeddings`);
+    const embeddings = await createServerSideEmbeddings(texts);
+    if (embeddings.length > 0) {
+      console.log(`[Embeddings] Successfully generated server-side embeddings with dimension: ${embeddings[0].length}`);
+    }
+    return embeddings;
+  } catch (error) {
+    console.error(`[Embeddings] Error generating server-side embeddings:`, error);
+    throw new Error(`Failed to generate embeddings: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
 
-  console.log(`Generating embeddings for ${texts.length} texts using client-side web worker`);
-  return await createClientSideEmbeddings(texts);
+/**
+ * Create embeddings using Lilypad API
+ */
+async function createLilypadEmbeddings(texts: string[]): Promise<number[][]> {
+  try {
+    console.log(`[Embeddings] Creating embeddings for ${texts.length} texts via Lilypad API`);
+    
+    // Create a batch of texts (max 20 per request to avoid timeouts)
+    const BATCH_SIZE = 20;
+    let allEmbeddings: number[][] = [];
+    
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
+      console.log(`[Embeddings] Processing batch ${i/BATCH_SIZE + 1} with ${batch.length} texts`);
+      
+      const response = await lilypadClient.embeddings.create({
+        model: "sentence-transformers/all-MiniLM-L6-v2",
+        input: batch,
+      });
+      
+      if (!response.data || !Array.isArray(response.data)) {
+        throw new Error("Invalid response from Lilypad embeddings API");
+      }
+      
+      const batchEmbeddings = response.data.map(item => {
+        if (!item.embedding || !Array.isArray(item.embedding)) {
+          throw new Error("Invalid embedding format in Lilypad API response");
+        }
+        return item.embedding;
+      });
+      
+      allEmbeddings = [...allEmbeddings, ...batchEmbeddings];
+    }
+    
+    console.log(`[Embeddings] Successfully created ${allEmbeddings.length} embeddings via Lilypad API`);
+    console.log(`[Embeddings] First embedding dimensions: ${allEmbeddings[0].length}`);
+    
+    return allEmbeddings;
+  } catch (error) {
+    console.error("[Embeddings] Error creating embeddings via Lilypad API:", error);
+    throw new Error(`Failed to create embeddings via Lilypad API: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
