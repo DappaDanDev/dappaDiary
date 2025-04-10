@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   images: {
     domains: ['anura-testnet.lilypad.tech'],
   },
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     // Required for projects using viem
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -17,6 +17,28 @@ const nextConfig: NextConfig = {
       net: false,
       tls: false,
     };
+
+    // Support for web workers - only in client builds
+    if (!isServer) {
+      config.module.rules.push({
+        test: /\.worker\.js$/,
+        use: {
+          loader: 'worker-loader',
+          options: {
+            filename: 'static/chunks/[name].[contenthash].js',
+            publicPath: '/_next/',
+          },
+        },
+      });
+    }
+
+    // Support for transformers.js - ignore node-specific modules
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "sharp$": false,
+      "onnxruntime-node$": false,
+    };
+
     return config;
   },
 };

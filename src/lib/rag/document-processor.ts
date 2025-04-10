@@ -1,41 +1,93 @@
-import { createEmbeddings, chunkText, extractTextFromDocument } from './lilypad-service';
-import { getOrCreateBucket, storeDocument, ensureCredits, getRecallClient } from './recall-client';
+import { createEmbeddings } from './lilypad-service';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  storeDocumentText,
+  storeDocumentMetadata,
+  storeChunk,
+  storeChunkMap,
+  storeDocumentIndex,
+  findRelevantChunks as findRelevantChunksInStoracha,
+  DocumentMetadata,
+  cosineSimilarity
+} from './storacha-vector-storage';
 
-interface DocumentMetadata {
-  title: string;
-  filename: string;
-  uploadedAt: string;
-  fileType: string;
-  fileSize: number;
-  chunkCount: number;
+// Text chunking function 
+function chunkText(text: string, maxChunkSize: number = 1000): string[] {
+  // Split text into paragraphs
+  const paragraphs = text.split(/\n\s*\n/);
+  
+  // Initialize chunks
+  const chunks: string[] = [];
+  let currentChunk = '';
+  
+  // Process each paragraph
+  for (const paragraph of paragraphs) {
+    // If adding this paragraph would exceed the max chunk size,
+    // start a new chunk (unless the current chunk is empty)
+    if (currentChunk && currentChunk.length + paragraph.length > maxChunkSize) {
+      chunks.push(currentChunk.trim());
+      currentChunk = '';
+    }
+    
+    currentChunk += paragraph + '\n\n';
+    
+    // If the current chunk is already too large, force a break
+    if (currentChunk.length > maxChunkSize) {
+      chunks.push(currentChunk.trim());
+      currentChunk = '';
+    }
+  }
+  
+  // Add the final chunk if it's not empty
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+}
+
+// Extract text from documents
+async function extractTextFromDocument(file: File): Promise<string> {
+  // Simple text extraction for now
+  return await file.text();
+}
+
+// Global tracking of document indices for this session
+let documentIndexCid: string | null = null;
+let documentIndices: Record<string, Record<string, string>> = {};
+
+// Function to get the flattened document index for storage
+function getFlattenedDocumentIndex(): Record<string, string> {
+  const flattened: Record<string, string> = {};
+  
+  // For each document ID, add its metadata and chunkMap CIDs
+  for (const [docId, cidMap] of Object.entries(documentIndices)) {
+    flattened[`${docId}_text`] = cidMap.text;
+    flattened[`${docId}_metadata`] = cidMap.metadata;
+    flattened[`${docId}_chunkMap`] = cidMap.chunkMap;
+  }
+  
+  return flattened;
 }
 
 /**
  * Process an uploaded document for RAG
  * 1. Extract text
  * 2. Chunk the text
- * 3. Create embeddings with Lilypad
- * 4. Store chunks and embeddings in Recall
+ * 3. Create embeddings with Transformers.js
+ * 4. Store chunks and embeddings in Storacha
  */
 export async function processDocument(file: File): Promise<string> {
   try {
-    // First, ensure we have enough credits in Recall
-    await ensureCredits(BigInt(1));
-    
-    // Get or create our bucket
-    const bucket = await getOrCreateBucket();
-    
     // Extract text from the document
     console.log(`Extracting text from ${file.name}...`);
     const text = await extractTextFromDocument(file);
     
     // Generate document ID
     const documentId = uuidv4();
-    const documentKey = `documents/${documentId}`;
     
-    // Store the original text
-    await storeDocument(bucket, documentKey, text, {
+    // Store the original text in Storacha
+    const textCid = await storeDocumentText(documentId, text, {
       'original': 'true',
       'filename': file.name,
       'fileType': file.type,
@@ -47,31 +99,26 @@ export async function processDocument(file: File): Promise<string> {
     const chunks = chunkText(text);
     console.log(`Created ${chunks.length} chunks`);
     
-    // Create embeddings for each chunk using Lilypad
-    console.log('Creating embeddings with Lilypad...');
+    // Create embeddings for each chunk using Transformers.js
+    console.log('Creating embeddings with Transformers.js...');
     const embeddings = await createEmbeddings(chunks);
     
-    // Store each chunk with its embedding
+    // Store each chunk with its embedding and track the CIDs
+    const chunkCids: Record<string, string> = {};
+    
     for (let i = 0; i < chunks.length; i++) {
-      const chunkKey = `chunks/${documentId}/${i}`;
       const chunkText = chunks[i];
+      const embedding = embeddings[i];
       
-      // Store the chunk text
-      await storeDocument(bucket, chunkKey, chunkText, {
-        'documentId': documentId,
-        'chunkIndex': i.toString(),
-        'chunkCount': chunks.length.toString(),
-      });
+      // Store the chunk with its embedding in Storacha
+      const chunkCid = await storeChunk(documentId, i, chunkText, embedding);
       
-      // Store the chunk embedding
-      const embeddingKey = `embeddings/${documentId}/${i}`;
-      const embeddingJson = JSON.stringify(embeddings[i]);
-      await storeDocument(bucket, embeddingKey, embeddingJson, {
-        'documentId': documentId,
-        'chunkIndex': i.toString(),
-        'embeddingModel': 'sentence-transformers/all-MiniLM-L6-v2',
-      });
+      // Track the CID
+      chunkCids[i.toString()] = chunkCid;
     }
+    
+    // Store the map of chunk CIDs
+    const chunkMapCid = await storeChunkMap(documentId, chunkCids);
     
     // Store document metadata
     const metadata: DocumentMetadata = {
@@ -83,9 +130,25 @@ export async function processDocument(file: File): Promise<string> {
       chunkCount: chunks.length,
     };
     
-    await storeDocument(bucket, `metadata/${documentId}`, JSON.stringify(metadata));
+    const metadataCid = await storeDocumentMetadata(documentId, metadata);
+    
+    // Update the document indices
+    if (!documentIndices[documentId]) {
+      documentIndices[documentId] = {};
+    }
+    
+    documentIndices[documentId] = {
+      text: textCid,
+      metadata: metadataCid,
+      chunkMap: chunkMapCid
+    };
+    
+    // Store the updated document index
+    documentIndexCid = await storeDocumentIndex(getFlattenedDocumentIndex());
     
     console.log(`Document processed and stored with ID: ${documentId}`);
+    console.log(`Document index CID: ${documentIndexCid}`);
+    
     return documentId;
   } catch (error: unknown) {
     console.error('Error processing document:', error);
@@ -102,97 +165,134 @@ export async function findRelevantChunks(
   query: string,
   topK: number = 3
 ): Promise<{ chunkText: string; similarity: number }[]> {
-  // In a real implementation, you would:
-  // 1. Get the query embedding from Lilypad
-  // 2. Get all chunk embeddings for the document from Recall
-  // 3. Compute cosine similarity between query and chunks
-  // 4. Return the top K chunks
-  
-  // For now, this is a placeholder implementation
-  // Actual implementation would require vector similarity search
-  
-  // Get query embedding
-  const queryEmbedding = (await createEmbeddings([query]))[0];
-  
-  // Get or create our bucket
-  const bucket = await getOrCreateBucket();
-  
-  // Find all embeddings for this document
-  const { result: { objects } } = await (await getRecallClient()).bucketManager().query(bucket, { 
-    prefix: `embeddings/${documentId}/` 
-  });
-  
-  // For each embedding, compute similarity with query
-  const similarities: { chunkIndex: number; similarity: number }[] = [];
-  
-  for (const obj of objects) {
-    const key = obj.key;
-    const chunkIndex = parseInt(key.split('/').pop() || '0', 10);
+  try {
+    // Get query embedding from Transformers.js
+    const queryEmbedding = (await createEmbeddings([query]))[0];
     
-    // Get the embedding
-    const { result: embeddingJson } = await (await getRecallClient()).bucketManager().get(bucket, key);
-    const embeddingStr = embeddingJson instanceof Uint8Array 
-      ? new TextDecoder().decode(embeddingJson) 
-      : embeddingJson as string;
-    
-    // Safely parse JSON
-    let embedding: number[];
-    try {
-      embedding = JSON.parse(embeddingStr);
-      if (!Array.isArray(embedding)) {
-        console.warn(`Embedding at ${key} is not an array, skipping`);
-        continue;
-      }
-    } catch (error) {
-      console.error(`Error parsing embedding JSON at ${key}:`, error);
-      console.error(`Raw content: ${embeddingStr.substring(0, 100)}...`);
-      continue; // Skip this embedding and move to the next one
+    // Make sure we have the document in our indices
+    if (!documentIndices[documentId]) {
+      throw new Error(`Document ${documentId} not found in the index. Make sure to process it first.`);
     }
     
-    // Compute cosine similarity
-    const similarity = cosineSimilarity(queryEmbedding, embedding);
-    similarities.push({ chunkIndex, similarity });
-  }
-  
-  // Sort by similarity (descending)
-  similarities.sort((a, b) => b.similarity - a.similarity);
-  
-  // Get the top K chunks
-  const topChunks = similarities.slice(0, topK);
-  
-  // Get the text for each chunk
-  const results: { chunkText: string; similarity: number }[] = [];
-  
-  for (const { chunkIndex, similarity } of topChunks) {
-    const chunkKey = `chunks/${documentId}/${chunkIndex}`;
-    const { result: chunkData } = await (await getRecallClient()).bucketManager().get(bucket, chunkKey);
-    const chunkText = chunkData instanceof Uint8Array 
-      ? new TextDecoder().decode(chunkData) 
-      : chunkData as string;
+    // Get the chunk map CID
+    const chunkMapCid = documentIndices[documentId].chunkMap;
     
-    results.push({ chunkText, similarity });
+    // Fetch the chunk map
+    const response = await fetch(`https://${chunkMapCid}.ipfs.dweb.link`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch chunk map: ${response.statusText}`);
+    }
+    
+    // Parse the chunk map JSON
+    const chunkCids = await response.json();
+    
+    // Find relevant chunks using our Storacha implementation
+    return await findRelevantChunksInStoracha(
+      documentId,
+      query,
+      queryEmbedding,
+      topK,
+      chunkCids
+    );
+  } catch (error) {
+    console.error(`Error finding relevant chunks for document ${documentId}:`, error);
+    throw error;
   }
-  
-  return results;
 }
 
 /**
- * Calculate cosine similarity between two vectors
+ * Get a list of all available documents with their metadata
+ * @returns Array of document IDs and metadata
  */
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must have the same length');
+export async function getAvailableDocuments(): Promise<{ id: string; metadata: DocumentMetadata }[]> {
+  try {
+    const documents: { id: string; metadata: DocumentMetadata }[] = [];
+    
+    // If we don't have any documents processed in this session, and no index CID,
+    // return an empty array
+    if (!documentIndexCid && Object.keys(documentIndices).length === 0) {
+      return documents;
+    }
+    
+    // For each document in our indices
+    for (const [docId, cidMap] of Object.entries(documentIndices)) {
+      try {
+        // Fetch the metadata
+        const metadataCid = cidMap.metadata;
+        const response = await fetch(`https://${metadataCid}.ipfs.dweb.link`);
+        
+        if (!response.ok) {
+          console.warn(`Failed to fetch metadata for document ${docId}`);
+          continue;
+        }
+        
+        const metadata = await response.json();
+        documents.push({ id: docId, metadata });
+      } catch (error) {
+        console.error(`Error fetching metadata for document ${docId}:`, error);
+        continue;
+      }
+    }
+    
+    return documents;
+  } catch (error) {
+    console.error('Error getting available documents:', error);
+    return [];
   }
-  
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+}
+
+/**
+ * Load document indices from a stored CID
+ * @param indexCid The CID of the document index
+ * @returns Whether the loading was successful
+ */
+export async function loadDocumentIndices(indexCid: string): Promise<boolean> {
+  try {
+    // Fetch the index file from Storacha via IPFS gateway
+    const response = await fetch(`https://${indexCid}.ipfs.dweb.link`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch document index: ${response.statusText}`);
+    }
+    
+    // Parse the index JSON
+    const flattenedIndex = await response.json();
+    
+    // Unflatten the index into our document indices structure
+    const reconstructedIndices: Record<string, Record<string, string>> = {};
+    
+    // Process each key in the flattened index
+    for (const [key, value] of Object.entries(flattenedIndex)) {
+      // Keys are in the format "{documentId}_{type}" where type is one of: text, metadata, chunkMap
+      const [docId, type] = key.split('_');
+      
+      if (!docId || !type) {
+        console.warn(`Invalid key format in document index: ${key}`);
+        continue;
+      }
+      
+      // Initialize the document entry if it doesn't exist
+      if (!reconstructedIndices[docId]) {
+        reconstructedIndices[docId] = {
+          text: '',
+          metadata: '',
+          chunkMap: ''
+        };
+      }
+      
+      // Set the CID for the appropriate type
+      reconstructedIndices[docId][type] = value as string;
+    }
+    
+    // Update our global indices
+    documentIndices = reconstructedIndices;
+    documentIndexCid = indexCid;
+    
+    console.log(`Loaded ${Object.keys(documentIndices).length} documents from index CID: ${indexCid}`);
+    return true;
+  } catch (error) {
+    console.error('Error loading document indices:', error);
+    return false;
   }
-  
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 } 
