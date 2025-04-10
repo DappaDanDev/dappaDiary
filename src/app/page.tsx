@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 // Remove direct import from storacha
 // import { createNewConversation, addMessageToConversation } from '@/lib/storacha';
+import { FileUploadDemo } from '@/components/file-upload-demo';
 
 interface Message {
   id: string;
@@ -25,6 +26,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentConversation, setCurrentConversation] = useState<ChatConversation | null>(null);
   const [conversationCid, setConversationCid] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Create a new conversation when the component loads
@@ -85,6 +87,48 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const handleFileUpload = (file: File) => {
+    setUploadedFile(file);
+    console.log('File uploaded in parent component:', file.name);
+    
+    // Process the file for RAG
+    processFileForRAG(file);
+  };
+
+  // Process file for RAG
+  const processFileForRAG = async (file: File) => {
+    // In a real implementation, this would:
+    // 1. Extract text from the file
+    // 2. Create embeddings
+    // 3. Store the embeddings for retrieval
+    
+    // For now, we'll just simulate the processing
+    console.log(`Processing file for RAG: ${file.name}`);
+    
+    // Create a FormData object to send the file to the backend (for future implementation)
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // Example of how you might send this to an API endpoint in the future
+    /* 
+    try {
+      const response = await fetch('/api/process-document', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to process document');
+      }
+      
+      const result = await response.json();
+      console.log('Document processed:', result);
+    } catch (error) {
+      console.error('Error processing document:', error);
+    }
+    */
+  };
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,6 +192,13 @@ export default function Home() {
         },
         body: JSON.stringify({
           messages: [...messages, userMessage],
+          // Include uploaded file information if available
+          uploadedFile: uploadedFile ? {
+            name: uploadedFile.name,
+            type: uploadedFile.type,
+            size: uploadedFile.size,
+            lastModified: uploadedFile.lastModified
+          } : null,
         }),
       });
 
@@ -260,13 +311,31 @@ export default function Home() {
       <main className="flex-1 overflow-y-auto p-4">
         <div className="max-w-3xl mx-auto space-y-4">
           {messages.length === 0 ? (
-            <div className="text-center py-10">
-              <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">
-                Start a conversation with DappaDiary
-              </h2>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">
-                Powered by Lilypad LLM and stored with Storacha
-              </p>
+            <div className="text-center py-10 space-y-8">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">
+                  Start a conversation with DappaDiary
+                </h2>
+                <p className="text-gray-500 dark:text-gray-400 mt-2">
+                  Powered by Lilypad LLM and stored with Storacha
+                </p>
+              </div>
+              
+              <div className="mt-6">
+                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-4">
+                  Upload a document to get started with RAG
+                </h3>
+                <FileUploadDemo onFileUpload={handleFileUpload} />
+              </div>
+              
+              {uploadedFile && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <h4 className="font-medium text-blue-700 dark:text-blue-300">RAG Mode Activated</h4>
+                  <p className="text-sm text-blue-600 dark:text-blue-400">
+                    Using document: {uploadedFile.name}
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             messages.map((message) => (
@@ -298,7 +367,7 @@ export default function Home() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
+            placeholder={uploadedFile ? `Ask about ${uploadedFile.name}...` : "Type your message..."}
             className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200"
             disabled={isLoading}
           />

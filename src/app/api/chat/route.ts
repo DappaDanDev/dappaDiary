@@ -42,15 +42,32 @@ async function* parseSSEResponse(reader: ReadableStreamDefaultReader<Uint8Array>
 // Main chat processing function
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages, uploadedFile } = await req.json();
     
     // Remove any system messages from the input as we'll add our own
     const userMessages = messages.filter((message: any) => message.role !== 'system');
     
+    // Create system message content based on whether a file is uploaded
+    let systemContent = 'You are DappaDiary, a helpful AI assistant that helps users manage their notebook content based on the NotebookLM project. You can retrieve information from documents, generate summaries, and help organize content effectively.';
+    
+    // If file is uploaded, add RAG context to the system message
+    if (uploadedFile) {
+      systemContent += `\n\nThe user has uploaded a document: "${uploadedFile.name}" (${uploadedFile.type}, ${(uploadedFile.size / (1024 * 1024)).toFixed(2)} MB).
+      Whenever the user asks questions, assume they might be asking about this document.
+      
+      You are in RAG (Retrieval-Augmented Generation) mode. In this mode, you should:
+      1. Acknowledge that you understand they're asking about their document
+      2. Explain what information you'd need to extract from their document to answer effectively
+      3. Mention that in a full RAG implementation, you would search for relevant passages in their document
+      4. Provide a hypothetical answer based on what you might find in such a document
+      
+      Your goal is to simulate how a RAG system would work with their document.`;
+    }
+    
     // Process with Lilypad LLM API
     const systemMessage = { 
       role: 'system', 
-      content: 'You are DappaDiary, a helpful AI assistant that helps users manage their notebook content based on the NotebookLM project. You can retrieve information from documents, generate summaries, and help organize content effectively.' 
+      content: systemContent
     };
     
     const allMessages = [systemMessage, ...userMessages];
