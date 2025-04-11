@@ -189,7 +189,7 @@ export async function storeDocumentIndex(
 export async function fetchDocumentIndex(indexCid: string): Promise<Record<string, string>> {
   try {    
     // Fetch the index file from Storacha via IPFS gateway
-    const response = await fetch(`https://${indexCid}.ipfs.dweb.link`);
+    const response = await fetch(`https://w3s.link/ipfs/${indexCid}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch document index: ${response.statusText}`);
@@ -335,7 +335,7 @@ export async function storeChunkMap(
 export async function fetchChunkMap(chunkMapCid: string): Promise<Record<string, string>> {
   try {
     // Fetch the chunk map file from Storacha via IPFS gateway
-    const response = await fetch(`https://${chunkMapCid}.ipfs.dweb.link`);
+    const response = await fetch(`https://w3s.link/ipfs/${chunkMapCid}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch chunk map: ${response.statusText}`);

@@ -46,25 +46,25 @@ If quoting directly, cite the specific chunk number (e.g., "According to Chunk 3
  */
 export class StorachaRAGFlow {
   private documentId: string;
-  private chunkMapCID: string;
+  private fallbackChunkMapCID: string | null;
   private graph: any; // Using any type to avoid build errors
   private modelName: string;
   private maxTokens: number;
   
   /**
    * @param documentId The document ID to retrieve chunks from
-   * @param chunkMapCID The CID of the chunk map in Storacha
+   * @param fallbackChunkMapCID Optional fallback CID of the chunk map in Storacha
    * @param modelName The Lilypad model to use
    * @param maxTokens Maximum tokens for the response
    */
   constructor(
     documentId: string,
-    chunkMapCID: string,
-    modelName: string = "anthropic/claude-3-haiku",
+    fallbackChunkMapCID: string | null = null,
+    modelName: string = "llama3.1:8b",
     maxTokens: number = 1000
   ) {
     this.documentId = documentId;
-    this.chunkMapCID = chunkMapCID;
+    this.fallbackChunkMapCID = fallbackChunkMapCID;
     this.modelName = modelName;
     this.maxTokens = maxTokens;
     
@@ -94,8 +94,9 @@ export class StorachaRAGFlow {
     console.log("[StorachaRAGFlow] Retrieving context for query:", state.question);
     
     try {
-      // Create retriever and get relevant chunks
-      const retriever = new StorachaRetriever(this.documentId, this.chunkMapCID);
+      // Create retriever with document ID and optional fallback chunk map CID
+      // The retriever will automatically look up the latest chunk map CID from the document registry
+      const retriever = new StorachaRetriever(this.documentId, this.fallbackChunkMapCID);
       const topChunks = await retriever.retrieveSimilarChunks(state.question, 3);
       
       console.log(`[StorachaRAGFlow] Retrieved ${topChunks.length} chunks`);
@@ -151,38 +152,60 @@ export class StorachaRAGFlow {
         .map(chunk => `Chunk ${chunk.chunkIndex}: ${chunk.text}`)
         .join("\n\n");
       
-      // Manually create the messages for OpenAI
-      // Using type assertion to bypass TypeScript errors
+      // Log the formatted context
+      console.log(`[StorachaRAGFlow] Formatted context (first 500 chars): ${contextString.substring(0, 500)}...`);
+      console.log(`[StorachaRAGFlow] Context length: ${contextString.length} chars, ${state.context.length} chunks`);
+      
+      // Ensure context is not empty
+      if (!contextString.trim()) {
+        console.warn("[StorachaRAGFlow] Context is empty after formatting.");
+        return { 
+          answer: "I don't have enough information to answer that question based on the available documents."
+        };
+      }
+      
+      // Create a completely different approach to RAG context integration
+      // Format the messages to follow standard RAG patterns
+      const formattedContext = state.context
+        .map((chunk, index) => `CHUNK ${chunk.chunkIndex}: ${chunk.text.trim()}`)
+        .join("\n\n");
+        
       const messages = [
         {
           role: "system" as const,
-          content: `You are a helpful assistant that answers questions based on the provided context. 
-Your task is to answer questions using ONLY the information from the provided document chunks.
-If the context doesn't contain enough information to answer the question, acknowledge this limitation and don't make up information.
-Include specific details from the context to support your answer.
-If quoting directly, cite the specific chunk number (e.g., "According to Chunk 3...").`
+          content: `You are a helpful AI assistant that answers questions based only on the provided context. 
+If the answer isn't in the context, admit you don't know. Don't make up information.`
         },
         {
           role: "user" as const,
-          content: state.question
-        },
-        {
-          role: "system" as const,
-          content: `Here is relevant context to help answer the question:\n\n${contextString}`
-        },
-        {
-          role: "user" as const,
-          content: "Based on the context, answer my question thoroughly and accurately."
+          content: `Use the following context to answer my question. Only use information from these sources.
+
+CONTEXT:
+${formattedContext}
+
+QUESTION: ${state.question}`
         }
       ];
+      
+      // Log the request for debugging
+      console.log(`[StorachaRAGFlow] Calling Lilypad API with model: ${this.modelName}`);
+      console.log(`[StorachaRAGFlow] Request payload:`, JSON.stringify({
+        model: this.modelName,
+        messages: messages,
+        max_tokens: this.maxTokens,
+        temperature: 0.2
+      }, null, 2).substring(0, 1000) + "...");
       
       // Call Lilypad to generate response
       const response = await lilypadClient.chat.completions.create({
         model: this.modelName,
-        messages: messages as any, // Type assertion to bypass TypeScript errors
+        messages: messages,
         max_tokens: this.maxTokens,
-        temperature: 0.2, // Lower temperature for more factual responses
+        temperature: 0.2
       });
+      
+      console.log(`[StorachaRAGFlow] Response received from Lilypad API`);
+      console.log(`[StorachaRAGFlow] Response content: ${response.choices[0]?.message?.content}`);
       
       const responseContent = response.choices[0]?.message?.content || 
         "I couldn't generate a response based on the available information.";
@@ -190,6 +213,15 @@ If quoting directly, cite the specific chunk number (e.g., "According to Chunk 3
       return { answer: responseContent };
     } catch (error) {
       console.error("[StorachaRAGFlow] Error generating response:", error);
+      // Print more detailed error information
+      if (error instanceof Error) {
+        console.error("[StorachaRAGFlow] Error message:", error.message);
+        console.error("[StorachaRAGFlow] Error stack:", error.stack);
+        if ('status' in error) {
+          console.error("[StorachaRAGFlow] Status code:", (error as any).status);
+        }
+      }
+      
       return { 
         answer: `I encountered an error while generating a response: ${error instanceof Error ? error.message : String(error)}. Please try again later.`
       };

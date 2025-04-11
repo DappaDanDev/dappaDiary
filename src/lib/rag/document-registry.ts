@@ -79,7 +79,11 @@ export async function storeDocumentRegistry(registry: DocumentRegistry): Promise
       globalStorage[REGISTRY_CID_KEY] = cid.toString();
     }
     
+    // Update the registry cache
+    registryCache = registry;
+    
     console.log(`Document registry uploaded to Storacha with CID: ${cid}`);
+    console.log(`Registry contains ${Object.keys(registry.documents).length} documents`);
     return cid.toString();
   } catch (error) {
     console.error('Error storing document registry:', error);
@@ -124,7 +128,7 @@ export async function loadDocumentRegistry(): Promise<DocumentRegistry> {
     }
     
     // Fetch the registry file from Storacha via IPFS gateway
-    const response = await fetch(`https://${registryCid}.ipfs.dweb.link`);
+    const response = await fetch(`https://w3s.link/ipfs/${registryCid}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch document registry: ${response.statusText}`);
@@ -151,6 +155,24 @@ export async function loadDocumentRegistry(): Promise<DocumentRegistry> {
     
     return newRegistry;
   }
+}
+
+/**
+ * Find a document in the registry by its ID
+ * @param documentId ID of the document to find
+ * @returns The document if found, null otherwise
+ */
+export async function findDocumentById(documentId: string): Promise<ProcessedDocument | null> {
+  // Load the registry
+  const registry = await loadDocumentRegistry();
+  
+  // Check if the registry has any documents
+  if (!registry.documents) {
+    return null;
+  }
+  
+  // Return the document if it exists
+  return registry.documents[documentId] || null;
 }
 
 /**
@@ -191,6 +213,13 @@ export async function addDocumentToRegistry(document: ProcessedDocument): Promis
   
   // Update the last updated timestamp
   registry.lastUpdated = new Date().toISOString();
+  
+  // Clear the cache to force a refresh
+  registryCache = registry;
+  
+  // Log the update to help with debugging
+  console.log(`[DocumentRegistry] Added document ${document.id} to registry`);
+  console.log(`[DocumentRegistry] Document has chunk map CID: ${document.processing.chunkMapCid}`);
   
   // Store the updated registry
   return await storeDocumentRegistry(registry);

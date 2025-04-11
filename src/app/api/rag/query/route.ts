@@ -3,10 +3,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { StorachaRAGFlow } from '@/lib/rag/agents/storacha-rag-flow';
 
-// The document ID and chunk map CID from the terminal output
-const DEFAULT_DOCUMENT_ID = "ec0427e4-7f3f-4b27-a768-7d8cb2aa7779";
-const DEFAULT_CHUNK_MAP_CID = "bafkreiezoevub4p7zpkrb6xvlzbrfv3extdwyusco6exy3qie4mtnsuxjq";
-
 /**
  * API endpoint for RAG queries
  * @param request The Next.js request object
@@ -16,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     // Parse the request body
     const body = await request.json();
-    const { query, documentId = DEFAULT_DOCUMENT_ID } = body;
+    const { query, documentId } = body;
     
     if (!query) {
       console.error("[RAG API] Missing query parameter");
@@ -26,23 +22,30 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    if (!documentId) {
+      console.error("[RAG API] Missing documentId parameter");
+      return NextResponse.json(
+        { error: "Document ID is required" },
+        { status: 400 }
+      );
+    }
+    
     console.log(`[RAG API] Processing query: "${query}" for document: ${documentId}`);
     
-    // Create RAG flow with the correct chunk map CID
-    const chunkMapCID = documentId === DEFAULT_DOCUMENT_ID 
-      ? DEFAULT_CHUNK_MAP_CID 
-      : body.chunkMapCID || DEFAULT_CHUNK_MAP_CID;
-    
-    const ragFlow = new StorachaRAGFlow(documentId, chunkMapCID);
+    // Create RAG flow with just the document ID
+    // The StorachaRetriever will automatically look up the latest chunk map CID from the document registry
+    const ragFlow = new StorachaRAGFlow(documentId, null);
     
     // Process the query
     const result = await ragFlow.query(query);
+    
+    // Log the complete result for debugging
+    console.log(`[RAG API] Query result:`, JSON.stringify(result, null, 2));
     
     // Return the result
     return NextResponse.json({
       answer: result.answer,
       documentId,
-      chunkMapCID,
       error: result.error,
       timestamp: new Date().toISOString()
     });

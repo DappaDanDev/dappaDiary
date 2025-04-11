@@ -15,18 +15,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Process the document (now with built-in deduplication)
-    const documentId = await processDocument(file);
-
-    // Check if the checksum parameter was provided for client-side deduplication checks
+    // Get optional skipDeduplication flag
     const skipDeduplication = formData.get('skipDeduplication') === 'true';
     
-    // Return with appropriate status
-    return NextResponse.json({ 
-      documentId,
-      message: "Document processed successfully"
-    });
+    // Process the document with the PDF-aware document processor
+    const documentId = await processDocument(file, skipDeduplication);
     
+    return NextResponse.json({
+      documentId,
+      message: `Document processed successfully with ID: ${documentId}`
+    });
   } catch (error) {
     console.error('Error processing document:', error);
     return NextResponse.json(

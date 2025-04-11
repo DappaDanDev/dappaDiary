@@ -16,6 +16,7 @@ import {
   addDocumentToRegistry,
   ProcessedDocument
 } from './document-registry';
+import { extractTextFromPDF } from './pdf-processor';
 
 // Text chunking function 
 function chunkText(text: string, maxChunkSize: number = 1000): string[] {
@@ -52,9 +53,28 @@ function chunkText(text: string, maxChunkSize: number = 1000): string[] {
   return chunks;
 }
 
-// Extract text from documents
+// Extract text from documents with PDF handling
 async function extractTextFromDocument(file: File): Promise<string> {
-  // Simple text extraction for now
+  console.log(`Extracting text from ${file.name} (${file.type})...`);
+  
+  // Check if this is a PDF file
+  if (file.type === 'application/pdf') {
+    console.log(`Detected PDF document, using PDF processor...`);
+    try {
+      // Convert File to Buffer for PDF processing
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      // Use PDF-specific extraction
+      return await extractTextFromPDF(buffer);
+    } catch (error) {
+      console.error('Error extracting text from PDF:', error);
+      // Fallback to regular text extraction if PDF processing fails
+      return await file.text();
+    }
+  }
+  
+  // Regular text extraction for non-PDF files
   return await file.text();
 }
 
@@ -82,8 +102,12 @@ function getFlattenedDocumentIndex(): Record<string, string> {
  * 2. Chunk the text
  * 3. Create embeddings with Transformers.js
  * 4. Store chunks and embeddings in Storacha
+ * 
+ * @param file The file to process
+ * @param skipDeduplication Whether to skip checking for duplicate documents
+ * @returns The document ID
  */
-export async function processDocument(file: File): Promise<string> {
+export async function processDocument(file: File, skipDeduplication: boolean = false): Promise<string> {
   try {
     // Extract text from the document for hashing
     console.log(`Extracting text from ${file.name}...`);
@@ -93,25 +117,29 @@ export async function processDocument(file: File): Promise<string> {
     const contentHash = generateContentHash(text);
     console.log(`Document content hash: ${contentHash}`);
     
-    // Check if this document has been processed before
-    const existingDocument = await findDocumentByHash(contentHash);
-    if (existingDocument) {
-      console.log(`Document with hash ${contentHash} already exists with ID: ${existingDocument.id}`);
-      
-      // Make sure we have the document in our local indices
-      if (!documentIndices[existingDocument.id]) {
-        documentIndices[existingDocument.id] = {
-          text: existingDocument.id + '_text', // These are placeholders
-          metadata: existingDocument.id + '_metadata',
-          chunkMap: existingDocument.processing.chunkMapCid
-        };
+    // Check if this document has been processed before (unless skipDeduplication is true)
+    if (!skipDeduplication) {
+      const existingDocument = await findDocumentByHash(contentHash);
+      if (existingDocument) {
+        console.log(`Document with hash ${contentHash} already exists with ID: ${existingDocument.id}`);
+        
+        // Make sure we have the document in our local indices
+        if (!documentIndices[existingDocument.id]) {
+          documentIndices[existingDocument.id] = {
+            text: existingDocument.id + '_text', // These are placeholders
+            metadata: existingDocument.id + '_metadata',
+            chunkMap: existingDocument.processing.chunkMapCid
+          };
+        }
+        
+        return existingDocument.id;
       }
-      
-      return existingDocument.id;
+    } else {
+      console.log('Skipping deduplication check as requested');
     }
     
-    // If not found, proceed with normal processing
-    console.log('Document not found in registry. Processing...');
+    // If not found or skipping deduplication, proceed with normal processing
+    console.log('Processing document as new...');
     
     // Generate document ID
     const documentId = uuidv4();

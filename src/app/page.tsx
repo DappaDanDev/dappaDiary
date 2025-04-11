@@ -182,7 +182,7 @@ export default function Home() {
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: result.response,
+          content: result.answer,
         };
         
         // Update messages state

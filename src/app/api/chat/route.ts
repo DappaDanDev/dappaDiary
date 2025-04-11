@@ -55,13 +55,13 @@ export async function POST(req: Request) {
       systemContent += `\n\nThe user has uploaded a document: "${uploadedFile.name}" (${uploadedFile.type}, ${(uploadedFile.size / (1024 * 1024)).toFixed(2)} MB).
       Whenever the user asks questions, assume they might be asking about this document.
       
-      You are in RAG (Retrieval-Augmented Generation) mode. In this mode, you should:
-      1. Acknowledge that you understand they're asking about their document
-      2. Explain what information you'd need to extract from their document to answer effectively
-      3. Mention that in a full RAG implementation, you would search for relevant passages in their document
-      4. Provide a hypothetical answer based on what you might find in such a document
+      You are operating in a real Retrieval-Augmented Generation (RAG) system. In this mode, you should:
+      1. Use the provided context to answer questions accurately.
+      2. Acknowledge that you understand they're asking about their document.
+      3. Use specific details from the document chunks to support your answers.
+      4. Avoid making up information or providing hypothetical answers.
       
-      Your goal is to simulate how a RAG system would work with their document.`;
+      Your goal is to provide accurate and context-based answers using the document content.`;
     }
     
     // Process with Lilypad LLM API
