@@ -6,6 +6,13 @@ import { OpenAI } from "openai";
 import { initStorachaClient } from '../storacha';
 import { v4 as uuidv4 } from 'uuid';
 import { queryRagAgent, createRagAgent } from '../rag/agents/rag-agent';
+import { fal } from "@fal-ai/client";
+
+// Configure fal.ai client with API key (will be set as env var in production)
+// In production, this will be set as FAL_KEY environment variable
+fal.config({
+  credentials: process.env.FAL_KEY || "fal-key-placeholder"
+});
 
 // Define standard podcast questions
 const STANDARD_PODCAST_QUESTIONS = [
@@ -293,11 +300,10 @@ IMPORTANT: Do NOT include any "<think>" blocks or speaker markers. Output only t
   
   /**
    * Node for generating audio from the podcast script
-   * This previously used Kokoro JS for text-to-speech conversion
-   * Now it just creates a placeholder for client-side TTS
+   * Uses fal.ai Kokoro TTS to convert text to speech
    */
-  private async generateAudioNode(state: PodcastState) {
-    console.log("[PodcastAgent] Skipping audio generation (Kokoro removed)");
+  private async generateAudioNode(state: PodcastState): Promise<{audioUrl: string; status: string} | {error: string; status: string; audioUrl: null}> {
+    console.log("[PodcastAgent] Generating audio using fal.ai Kokoro TTS");
     
     try {
       // Verify we have a script
@@ -305,63 +311,110 @@ IMPORTANT: Do NOT include any "<think>" blocks or speaker markers. Output only t
         throw new Error("No script available for audio generation");
       }
       
-      // Create a placeholder buffer - client-side TTS will be implemented separately
-      const dummyBuffer = Buffer.from("Client-side TTS placeholder");
-      return dummyBuffer;
+      // Call the fal.ai Kokoro TTS API
+      console.log("[PodcastAgent] Sending script to fal.ai Kokoro TTS API");
+      try {
+        // Using the exact approach from the fal.ai documentation
+        // https://fal.ai/models/fal-ai/kokoro/american-english/api
+        const result = await fal.subscribe("fal-ai/kokoro/american-english", {
+          input: {
+            prompt: state.script,
+            voice: "am_adam"
+          },
+          logs: true,
+          onQueueUpdate: (update) => {
+            console.log(`[PodcastAgent] TTS status: ${update.status}`);
+            if (update.status === "IN_PROGRESS" && update.logs) {
+              update.logs.forEach(log => {
+                console.log(`[PodcastAgent] TTS log: ${log.message}`);
+              });
+            }
+          }
+        });
+        
+        console.log("[PodcastAgent] TTS generation completed, received result:", result.data);
+        
+        if (!result.data?.audio?.url) {
+          throw new Error("No audio URL received from fal.ai");
+        }
+        
+        const audioUrl = result.data.audio.url;
+        console.log(`[PodcastAgent] Successfully generated audio at URL: ${audioUrl}`);
+        
+        return { 
+          audioUrl, 
+          status: "Audio generated successfully"
+        };
+      } catch (apiError) {
+        console.error("[PodcastAgent] Error calling fal.ai API:", apiError);
+        throw new Error(`fal.ai API error: ${apiError instanceof Error ? apiError.message : String(apiError)}`);
+      }
     } catch (error) {
-      console.error("[PodcastAgent] Error in audio node:", error);
+      console.error("[PodcastAgent] Error in audio generation:", error);
       return { 
-        error: `Error in audio node: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Error in audio generation: ${error instanceof Error ? error.message : String(error)}`,
         status: "Error in audio generation",
+        audioUrl: null
       };
     }
   }
   
   /**
    * Node for storing the generated audio file using Storacha
+   * Updated to handle direct URLs from fal.ai
    */
   private async storeAudioNode(state: PodcastState) {
-    console.log("[PodcastAgent] Storing audio file");
+    console.log("[PodcastAgent] Storing audio reference");
     
     try {
-      // Verify we have a script
+      // Verify we have a script and audioUrl
       if (!state.script || state.script.length === 0) {
         throw new Error("No script available for storage");
       }
       
-      // No need to generate audio server-side, we'll use browser-based TTS
-      const dummyBuffer = Buffer.from("Client-side TTS will be used");
-      
-      // Use the podcast-storage service to store the audio
-      const { storePodcastAudio } = await import('./podcast-storage');
+      if (!state.audioUrl) {
+        throw new Error("No audio URL available from fal.ai");
+      }
       
       // Generate a title from the first 50 characters of the context
       const contextPreview = this.context.substring(0, 50).trim();
       const title = `Podcast: ${contextPreview}${this.context.length > 50 ? '...' : ''}`;
       
-      // Store the audio and get the CID
-      const result = await storePodcastAudio(
-        this.documentId,
-        dummyBuffer,
-        state.script,
-        title
-      );
+      // Use the podcast-storage service to store the audio metadata
+      // Modified to work with a URL instead of audio buffer
+      const { storePodcastAudioReference } = await import('./podcast-storage');
       
-      console.log(`[PodcastAgent] Successfully stored audio with CID: ${result.audioCid}`);
-      
-      // Get the audio URL
-      const audioUrl = `https://w3s.link/ipfs/${result.audioCid}`;
-      
-      return { 
-        audioUrl,
-        status: "Audio stored successfully",
-      };
+      // Store the audio reference and get the result
+      console.log(`[PodcastAgent] Storing audio reference for URL: ${state.audioUrl}`);
+      try {
+        const result = await storePodcastAudioReference(
+          this.documentId,
+          state.audioUrl,
+          state.script,
+          title
+        );
+        
+        console.log(`[PodcastAgent] Successfully stored audio reference with ID: ${result.id}`);
+        
+        return { 
+          audioUrl: state.audioUrl,
+          status: "Audio reference stored successfully",
+        };
+      } catch (storageError) {
+        console.error("[PodcastAgent] Error storing audio reference:", storageError);
+        // Even if storage fails, we can still return the audio URL
+        return {
+          audioUrl: state.audioUrl,
+          error: `Warning: Audio reference storage failed: ${storageError instanceof Error ? storageError.message : String(storageError)}`,
+          status: "Audio generated but reference storage failed"
+        };
+      }
     } catch (error) {
-      console.error("[PodcastAgent] Error storing audio:", error);
+      console.error("[PodcastAgent] Error in audio storage node:", error);
       return { 
-        error: `Error storing audio: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Error in audio storage: ${error instanceof Error ? error.message : String(error)}`,
         status: "Error in audio storage",
-        audioUrl: null
+        audioUrl: state.audioUrl // Pass through any existing URL
       };
     }
   }

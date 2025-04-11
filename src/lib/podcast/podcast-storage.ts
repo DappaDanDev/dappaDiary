@@ -242,4 +242,73 @@ export async function deletePodcast(podcastId: string): Promise<boolean> {
     console.error(`[PodcastStorage] Error deleting podcast:`, error);
     return false;
   }
+}
+
+/**
+ * Store a reference to externally hosted podcast audio (e.g., from fal.ai)
+ * @param documentId Document ID
+ * @param audioUrl URL to the audio file
+ * @param script Podcast script
+ * @param title Podcast title
+ * @returns Storage result with ID and metadata CID
+ */
+export async function storePodcastAudioReference(
+  documentId: string,
+  audioUrl: string,
+  script: string,
+  title: string
+): Promise<{ id: string; metadataCid: string }> {
+  console.log(`[PodcastStorage] Storing podcast audio reference for document ${documentId}`);
+  
+  try {
+    // Generate a unique ID for this podcast
+    const podcastId = `podcast-${uuidv4()}`;
+    
+    // Initialize Storacha client
+    const storachaClient = await initStorachaClient();
+    
+    // Create metadata for the podcast
+    const metadata: Partial<PodcastMetadata> = {
+      id: podcastId,
+      documentId,
+      title,
+      script,
+      createdAt: new Date().toISOString(),
+      // For external audio, we don't have a CID but store the URL in the metadata
+      audioCid: null, // No IPFS CID for externally hosted audio
+      localFilePath: "", // No local file for externally hosted audio
+      description: `Podcast generated for document ${documentId}`,
+      duration: 0, // Duration unknown for externally hosted audio
+    };
+    
+    // Convert metadata to JSON
+    const metadataJson = JSON.stringify(metadata);
+    
+    // Upload metadata to Storacha
+    const metadataBlob = new Blob([metadataJson], { type: 'application/json' });
+    const metadataFile = new File(
+      [metadataBlob], 
+      `podcast-metadata-${documentId}.json`, 
+      { type: 'application/json' }
+    );
+    const metadataCid = await storachaClient.uploadFile(metadataFile);
+    console.log(`[PodcastStorage] Metadata uploaded with CID: ${metadataCid}`);
+    
+    // Update podcast document map with audio URL instead of CID
+    await updatePodcastDocumentMap(documentId, {
+      audioCid: audioUrl, // Using the URL directly in place of a CID
+      metadataCid: metadataCid.toString(),
+      title,
+      timestamp: new Date().toISOString(),
+      localFilePath: "", // No local file for externally hosted audio
+    });
+    
+    return {
+      id: podcastId,
+      metadataCid: metadataCid.toString(),
+    };
+  } catch (error) {
+    console.error('[PodcastStorage] Error storing podcast reference:', error);
+    throw error;
+  }
 } 
