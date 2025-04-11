@@ -75,6 +75,40 @@ This document outlines a clear and logical order of tasks for recreating Noteboo
   - What error handling and logging mechanisms should be implemented for Storacha file uploads?
   - Which specific shadcn/ui components will be used for the NextJS frontend, and what are the UI/UX design considerations for the Notebook and Chat interfaces?
 
+## 12. Podcast Feature
+- [ ] Design and implement the podcast generation workflow:
+  - [ ] Create podcast agent using LangGraphJS for orchestrating the podcast creation process
+  - [ ] Develop system to generate engaging podcast questions based on document content
+  - [ ] Implement script generation with deepseek-r1:7b model via Lilypad API
+  - [ ] Integrate Kokoro JS for text-to-speech with distinct voices (female host, male guest)
+  - [ ] Build Storacha-based audio file storage system
+  - [ ] Add podcast player UI component with Browser Audio API
+
+- [ ] Develop backend components:
+  - [ ] Create `podcast-agent.ts` using LangGraphJS for managing the podcast generation workflow
+  - [ ] Implement `kokoro-service.ts` for text-to-speech conversion with multiple voices
+  - [ ] Build `podcast-storage.ts` for Storacha integration to store audio files
+  - [ ] Add API endpoint at `/api/podcast/route.ts` for podcast generation requests
+
+- [ ] Implement frontend components:
+  - [ ] Add "Make a Podcast" button to UI after document processing
+  - [ ] Create podcast generation status indicators
+  - [ ] Develop audio player component with play/pause/seek functionality
+  - [ ] Design responsive UI for podcast playback experience
+
+- [ ] Testing and optimization:
+  - [ ] Test podcast generation with various document types and content
+  - [ ] Optimize audio quality and generation performance
+  - [ ] Ensure proper error handling throughout the podcast generation process
+  - [ ] Validate cross-browser compatibility for audio playback
+
+- [ ] Remaining Questions:
+  - What specific Kokoro JS model and parameters will work best for realistic voice generation?
+  - How should we handle very long documents that might generate lengthy podcasts?
+  - What fallback mechanisms should we implement if the Lilypad API or Kokoro JS service fails?
+  - How do we handle storage limitations for audio files in Storacha?
+  - What metrics should we collect to measure podcast feature usage and effectiveness?
+
 ---
 *References:*
 - [NextJS Documentation](https://nextjs.org/docs)

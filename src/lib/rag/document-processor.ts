@@ -381,4 +381,40 @@ export async function loadDocumentIndices(indexCid: string): Promise<boolean> {
     console.error('Error loading document indices:', error);
     return false;
   }
+}
+
+/**
+ * Directly get the full document text without using embeddings
+ * Use this for podcast generation instead of vector search to avoid timeouts
+ * @param documentId The document ID
+ * @returns The full document text
+ */
+export async function getFullDocumentText(documentId: string): Promise<string> {
+  try {
+    console.log(`[DocumentProcessor] Getting full document text for ${documentId}`);
+    
+    // Get the document text CID from storage
+    const client = await fetch(`https://w3s.link/ipfs/${documentId}_text`);
+    
+    if (!client.ok) {
+      // Try looking up in the document indices we have in memory
+      if (documentIndices[documentId] && documentIndices[documentId].text) {
+        const textCid = documentIndices[documentId].text;
+        const textResponse = await fetch(`https://w3s.link/ipfs/${textCid}`);
+        
+        if (!textResponse.ok) {
+          throw new Error(`Failed to fetch document text: ${textResponse.statusText}`);
+        }
+        
+        return await textResponse.text();
+      }
+      
+      throw new Error(`Failed to fetch document text: ${client.statusText}`);
+    }
+    
+    return await client.text();
+  } catch (error) {
+    console.error(`[DocumentProcessor] Error getting full document text:`, error);
+    throw error;
+  }
 } 

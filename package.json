@@ -24,6 +24,7 @@
     "ai": "^4.3.4",
     "clsx": "^2.1.1",
     "framer-motion": "^12.6.3",
+    "kokoro-js": "^1.2.0",
     "langchain": "^0.3.21",
     "next": "15.2.5",
     "onnxruntime-node": "^1.21.0",

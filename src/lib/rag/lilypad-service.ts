@@ -237,3 +237,42 @@ async function generateEmbeddingsWithWorker(texts: string[], batchId: string): P
     worker.postMessage({ texts, batchId });
   });
 }
+
+/**
+ * Process a RAG query using the Lilypad client
+ * @param query The user's question
+ * @param context The retrieved document context
+ * @returns The generated response
+ */
+export async function processRagQuery(query: string, context: string): Promise<string> {
+  try {
+    console.log(`[RAG] Processing query with ${context.length} chars of context`);
+    
+    const response = await lilypadClient.chat.completions.create({
+      model: "llama3.1:8b",
+      messages: [
+        {
+          role: "system",
+          content: `You are a helpful AI assistant that answers questions based on the provided context.
+Answer the question using ONLY the information from the context.
+If the answer cannot be determined from the context, say "I don't have enough information to answer that question."
+Keep your responses concise and to the point.`
+        },
+        {
+          role: "user",
+          content: `Context:
+${context}
+
+Question: ${query}`
+        }
+      ],
+      temperature: 0.2,
+    });
+
+    const answer = response.choices[0]?.message?.content || "Unable to generate a response.";
+    return answer;
+  } catch (error) {
+    console.error("[RAG] Error processing query:", error);
+    throw new Error(`Failed to process RAG query: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}

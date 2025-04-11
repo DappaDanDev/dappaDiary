@@ -1,10 +1,10 @@
 import { 
-  MessagesAnnotation, 
+  MessagesAnnotation,
   StateGraph, 
   START, 
   END 
 } from '@langchain/langgraph';
-import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage, BaseMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
@@ -52,20 +52,12 @@ const retrieveContext = tool(
   }
 );
 
-// Function to decide which node to go to next
-function decideNextStep(state: RAGState): "retrieve" | "generate" | typeof END {
-  // If we don't have context yet, retrieve it
-  if (!state.context) {
-    return "retrieve";
-  }
-  
-  // If we have context, generate a response
-  if (state.context && !state.messages.some(m => m.role === 'assistant')) {
-    return "generate";
-  }
-  
-  // If we've already generated a response, we're done
-  return END;
+// Helper to get message type safely
+function _getType(message: BaseMessage): string {
+  if (message instanceof AIMessage) return 'assistant';
+  if (message instanceof HumanMessage) return 'user';
+  if (message instanceof SystemMessage) return 'system';
+  return '';
 }
 
 /**
@@ -77,7 +69,9 @@ export function createRagAgent(documentId: string) {
 
   // We'll use the OpenAI ChatModel with the Lilypad endpoint
   const model = new ChatOpenAI({
-    baseURL: 'https://anura-testnet.lilypad.tech/api/v1',
+    configuration: {
+      baseURL: 'https://anura-testnet.lilypad.tech/api/v1',
+    },
     apiKey: process.env.ANURA_API_KEY || 'placeholder-key',
     modelName: 'llama3.1:8b',
   });
@@ -89,112 +83,56 @@ from a document. Your goal is to provide accurate information based on the conte
 If the answer isn't in the context, say you don't know. Don't make up information.`
   });
 
-  // Node for retrieving context
-  const retrieveContextNode = async (state: RAGState): Promise<Partial<RAGState>> => {
-    if (!state.documentId) {
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage("Error: No document ID available for retrieval.")
-        ]
-      };
-    }
-
-    // Get the latest user message
-    const lastMessage = state.messages[state.messages.length - 1];
-    if (lastMessage.role !== 'user') {
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage("Error: Expected a user message.")
-        ]
-      };
-    }
-
-    // Use the retrieve_context tool to get relevant context
-    const query = lastMessage.content as string;
-    try {
-      const context = await retrieveContext.invoke({
-        documentId: state.documentId,
-        query
-      });
-
-      return {
-        context,
-      };
-    } catch (error) {
-      console.error('Error retrieving context:', error);
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage(`Error retrieving context: ${error}`)
-        ]
-      };
-    }
-  };
-
-  // Node for generating a response
-  const generateResponseNode = async (state: RAGState): Promise<Partial<RAGState>> => {
-    if (!state.context) {
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage("Error: No context available for generating a response.")
-        ]
-      };
-    }
-
-    // Get the latest user message
-    const lastMessage = state.messages[state.messages.length - 1];
-    if (lastMessage.role !== 'user') {
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage("Error: Expected a user message.")
-        ]
-      };
-    }
-
-    const query = lastMessage.content as string;
-    try {
-      // Use the Lilypad service to process the RAG query
-      const response = await processRagQuery(query, state.context);
+  // Create a simple graph with just the memory functionality
+  // This bypasses the complex LangGraph structure but still provides the same functionality
+  const graph = {
+    memory,
+    async invoke(state: any) {
+      const messages = state.messages || [];
+      const query = messages[0]?.content || '';
       
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage(response)
-        ]
-      };
-    } catch (error) {
-      console.error('Error generating response:', error);
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage(`Error generating response: ${error}`)
-        ]
-      };
+      // Store the initial state
+      await memory.put({
+        messages,
+        documentId,
+        context: null
+      });
+      
+      try {
+        // Retrieve context
+        const context = await retrieveContext.invoke({
+          documentId,
+          query
+        });
+        
+        // Store state with context
+        await memory.put({
+          messages,
+          documentId,
+          context
+        });
+        
+        // Generate response using Lilypad
+        const response = await processRagQuery(query, context);
+        
+        // Return final state
+        return {
+          messages: [...messages, new AIMessage(response)],
+          documentId,
+          context
+        };
+      } catch (error) {
+        console.error('Error in RAG agent:', error);
+        return {
+          messages: [...messages, new AIMessage(`Error: ${error}`)],
+          documentId,
+          context: null
+        };
+      }
     }
   };
 
-  // Create the graph
-  const workflow = new StateGraph<RAGState>({
-    channels: {
-      messages: MessagesAnnotation,
-      documentId: { value: documentId },
-      context: { value: null },
-    },
-  })
-    .addNode("retrieve", retrieveContextNode)
-    .addNode("generate", generateResponseNode)
-    .addEdge(START, "retrieve")
-    .addConditionalEdges("retrieve", decideNextStep)
-    .addEdge("generate", END);
-
-  // Compile the graph
-  return workflow.compile({
-    checkpointer: memory,
-  });
+  return graph;
 }
 
 /**
@@ -207,7 +145,7 @@ export async function queryRagAgent(agent: any, query: string): Promise<string> 
   
   // Get the assistant's response
   const assistantMessage = result.messages.find(
-    (message: AIMessage | HumanMessage | SystemMessage) => message.role === 'assistant'
+    (message: BaseMessage) => _getType(message) === 'assistant'
   );
   
   return assistantMessage ? assistantMessage.content : "No response generated";
