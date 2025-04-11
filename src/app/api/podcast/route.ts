@@ -25,16 +25,14 @@ export async function POST(req: NextRequest) {
     
     // Check if podcast already exists for this document
     const existingPodcast = await getPodcastForDocument(documentId);
-    if (existingPodcast && existingPodcast.audioCid) {
-      console.log(`[PodcastAPI] Found existing podcast for document ${documentId}`);
-      const audioUrl = `https://w3s.link/ipfs/${existingPodcast.audioCid}`;
+    if (existingPodcast && existingPodcast.script) {
+      console.log(`[PodcastAPI] Found existing podcast script for document ${documentId}`);
       
       return NextResponse.json({
         success: true,
-        message: 'Podcast retrieved successfully',
+        message: 'Podcast script retrieved successfully',
         podcast: {
           documentId,
-          audioUrl,
           script: existingPodcast.script
         }
       });
@@ -65,28 +63,27 @@ export async function POST(req: NextRequest) {
       console.log(`[PodcastAPI] Retrieved document content via chunks, length: ${documentContent.length}`);
     }
     
-    // Generate podcast
+    // Generate podcast script (no audio)
     console.log(`[PodcastAPI] Creating new podcast agent for document ${documentId}`);
     const podcastAgent = new PodcastAgent(documentId, documentContent);
-    const result = await podcastAgent.generatePodcast();
+    const result = await podcastAgent.generatePodcastScript(); // Updated to use the script-only method
     
-    if (result.error || !result.audioUrl) {
-      console.error(`[PodcastAPI] Error generating podcast: ${result.error}`);
+    if (result.error || !result.script) {
+      console.error(`[PodcastAPI] Error generating podcast script: ${result.error}`);
       return NextResponse.json(
-        { error: result.error || 'Failed to generate podcast audio' },
+        { error: result.error || 'Failed to generate podcast script' },
         { status: 500 }
       );
     }
     
-    console.log(`[PodcastAPI] Podcast generated successfully with URL: ${result.audioUrl}`);
+    console.log(`[PodcastAPI] Podcast script generated successfully`);
     
-    // Return the podcast info
+    // Return the podcast script info
     return NextResponse.json({
       success: true,
-      message: 'Podcast generated successfully',
+      message: 'Podcast script generated successfully',
       podcast: {
         documentId,
-        audioUrl: result.audioUrl,
         script: result.script
       }
     });
@@ -127,12 +124,12 @@ export async function GET(req: NextRequest) {
       );
     }
     
-    // Return podcast information
+    // Return podcast information (script only, no audio)
     return NextResponse.json({
       message: 'Podcast found',
       podcast: {
         ...podcast,
-        audioUrl: podcast.audioCid ? `https://w3s.link/ipfs/${podcast.audioCid}` : null
+        script: podcast.script || ''
       }
     });
   } catch (error) {

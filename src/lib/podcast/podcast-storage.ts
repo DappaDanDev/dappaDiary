@@ -1,5 +1,7 @@
 import { initStorachaClient } from '../storacha';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * Interface for podcast metadata
@@ -13,6 +15,7 @@ export interface PodcastMetadata {
   script: string;
   createdAt: string;
   audioCid: string | null;
+  localFilePath: string;
 }
 
 /**
@@ -24,81 +27,84 @@ export interface PodcastDocumentMap {
     audioCid: string;
     metadataCid: string;
     createdAt: string;
+    title: string;
+    timestamp: string;
+    localFilePath: string;
   }
 }
 
 /**
  * Store podcast audio in Storacha
- * @param documentId The document ID the podcast is based on
- * @param audioBuffer The audio file buffer
- * @param script The podcast script
- * @returns The CID of the stored audio and metadata
+ * @param documentId Document ID
+ * @param audioBuffer Audio buffer
+ * @param script Podcast script
+ * @param title Podcast title
+ * @returns Storacha CIDs
  */
 export async function storePodcastAudio(
   documentId: string,
   audioBuffer: Buffer,
   script: string,
-  title: string = "Generated Podcast"
-): Promise<{ audioCid: string; metadataCid: string; podcastId: string }> {
+  title: string
+): Promise<{ audioCid: string; metadataCid: string }> {
+  console.log(`[PodcastStorage] Storing podcast audio for document ${documentId}`);
+  
   try {
-    console.log(`[PodcastStorage] Storing podcast audio for document ${documentId}`);
+    // Generate local podcast filepath
+    const podcastDir = path.join(process.cwd(), 'podcasts');
+    const localFilename = `podcast-${documentId}.wav`;
+    const localFilePath = path.join(podcastDir, localFilename);
     
-    const client = await initStorachaClient();
-    const podcastId = `podcast-${uuidv4()}`;
+    // Save the podcast locally
+    if (!fs.existsSync(podcastDir)) {
+      fs.mkdirSync(podcastDir, { recursive: true });
+    }
+    fs.writeFileSync(localFilePath, audioBuffer);
+    console.log(`[PodcastStorage] Saved podcast audio locally to ${localFilePath}`);
     
-    // Create a blob with the audio data
+    // Initialize Storacha client
+    const storachaClient = await initStorachaClient();
+    
+    // Upload audio to Storacha
     const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
-    
-    // Create a file object with a meaningful name
-    const audioFile = new File(
-      [audioBlob],
-      `podcast-${podcastId}.wav`,
-      { type: 'audio/wav' }
-    );
-    
-    // Upload the audio file to Storacha
-    const audioCid = await client.uploadFile(audioFile);
+    const audioFile = new File([audioBlob], `podcast-${documentId}.wav`, { type: 'audio/wav' });
+    const audioCid = await storachaClient.uploadFile(audioFile);
     console.log(`[PodcastStorage] Audio uploaded with CID: ${audioCid}`);
     
-    // Create metadata object
-    const metadata: PodcastMetadata = {
-      id: podcastId,
+    // Create metadata for the podcast
+    const metadata = {
       documentId,
       title,
-      description: `Podcast generated from document ${documentId}`,
-      duration: Math.ceil(audioBuffer.length / (44100 * 2)), // Rough estimate of duration in seconds
       script,
-      createdAt: new Date().toISOString(),
-      audioCid: audioCid.toString()
+      timestamp: new Date().toISOString(),
+      audioCid: audioCid.toString(),
+      localFilePath,
     };
     
-    // Convert metadata to JSON string
-    const metadataJson = JSON.stringify(metadata, null, 2);
+    // Convert metadata to JSON
+    const metadataJson = JSON.stringify(metadata);
     
-    // Create a blob with the metadata
+    // Upload metadata to Storacha
     const metadataBlob = new Blob([metadataJson], { type: 'application/json' });
-    
-    // Create a file object with a meaningful name
-    const metadataFile = new File(
-      [metadataBlob],
-      `podcast-metadata-${podcastId}.json`,
-      { type: 'application/json' }
-    );
-    
-    // Upload the metadata file to Storacha
-    const metadataCid = await client.uploadFile(metadataFile);
+    const metadataFile = new File([metadataBlob], `podcast-metadata-${documentId}.json`, { type: 'application/json' });
+    const metadataCid = await storachaClient.uploadFile(metadataFile);
     console.log(`[PodcastStorage] Metadata uploaded with CID: ${metadataCid}`);
     
     // Update podcast document map
-    await updatePodcastDocumentMap(documentId, podcastId, audioCid.toString(), metadataCid.toString());
+    await updatePodcastDocumentMap(documentId, {
+      audioCid: audioCid.toString(),
+      metadataCid: metadataCid.toString(),
+      title,
+      timestamp: new Date().toISOString(),
+      localFilePath,
+    });
     
     return {
       audioCid: audioCid.toString(),
       metadataCid: metadataCid.toString(),
-      podcastId
     };
   } catch (error) {
-    console.error('[PodcastStorage] Error storing podcast audio:', error);
+    console.error('[PodcastStorage] Error storing podcast:', error);
     throw error;
   }
 }
@@ -106,16 +112,18 @@ export async function storePodcastAudio(
 /**
  * Update the podcast document map
  * @param documentId The document ID
- * @param podcastId The podcast ID
- * @param audioCid The audio CID
- * @param metadataCid The metadata CID
+ * @param podcastInfo The podcast information
  * @returns The CID of the updated map
  */
 async function updatePodcastDocumentMap(
   documentId: string,
-  podcastId: string,
-  audioCid: string,
-  metadataCid: string
+  podcastInfo: {
+    audioCid: string;
+    metadataCid: string;
+    title: string;
+    timestamp: string;
+    localFilePath: string;
+  }
 ): Promise<string> {
   try {
     const client = await initStorachaClient();
@@ -132,10 +140,13 @@ async function updatePodcastDocumentMap(
     
     // Update the map with new podcast
     podcastMap[documentId] = {
-      podcastId,
-      audioCid,
-      metadataCid,
-      createdAt: new Date().toISOString()
+      podcastId: `podcast-${uuidv4()}`,
+      audioCid: podcastInfo.audioCid,
+      metadataCid: podcastInfo.metadataCid,
+      createdAt: new Date().toISOString(),
+      title: podcastInfo.title,
+      timestamp: podcastInfo.timestamp,
+      localFilePath: podcastInfo.localFilePath,
     };
     
     // Convert map to JSON string

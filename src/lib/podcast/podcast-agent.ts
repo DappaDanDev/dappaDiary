@@ -52,6 +52,7 @@ type PodcastState = {
  */
 export class PodcastAgent {
   private graph: any;
+  private scriptGraph: any;
   private documentId: string;
   private context: string;
 
@@ -64,6 +65,7 @@ export class PodcastAgent {
     this.documentId = documentId;
     this.context = context;
     this.graph = this.buildGraph();
+    this.scriptGraph = this.buildScriptOnlyGraph();
   }
 
   /**
@@ -82,6 +84,22 @@ export class PodcastAgent {
       .addEdge("generateScript", "generateAudio")
       .addEdge("generateAudio", "storeAudio")
       .addEdge("storeAudio", "__end__");
+
+    return workflow.compile();
+  }
+
+  /**
+   * Build a graph for script generation only (no audio)
+   */
+  private buildScriptOnlyGraph() {
+    const workflow = new StateGraph(PodcastStateAnnotation)
+      .addNode("generateQuestions", this.generateQuestionsNode.bind(this))
+      .addNode("askRagAgent", this.askRagAgentNode.bind(this))
+      .addNode("generateScript", this.generateScriptNode.bind(this))
+      .addEdge("__start__", "generateQuestions")
+      .addEdge("generateQuestions", "askRagAgent")
+      .addEdge("askRagAgent", "generateScript")
+      .addEdge("generateScript", "__end__");
 
     return workflow.compile();
   }
@@ -206,7 +224,10 @@ export class PodcastAgent {
       // Format Q&A for the script generation
       const qaPairs = state.questions.map((question, index) => {
         const answer = state.answers[index] || "No answer available for this question.";
-        return `Q: ${question}\nA: ${answer}`;
+        // Remove any <think> blocks from questions and answers
+        const cleanQuestion = question.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        const cleanAnswer = answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        return `Q: ${cleanQuestion}\nA: ${cleanAnswer}`;
       }).join("\n\n");
       
       // Use the model to generate a podcast script
@@ -215,33 +236,28 @@ export class PodcastAgent {
         messages: [
           {
             role: "system",
-            content: `You are a podcast script writer. Create an engaging 3-minute podcast conversation 
-between a HOST and a GUEST about a document. The script should be formatted with 
-"HOST:" and "GUEST:" prefixes for each line of dialogue.
+            content: `You are a podcast script writer. Create an engaging 3-minute podcast monologue 
+about a document, as if delivered by a single knowledgeable host.
 
-The host should be a knowledgeable interviewer who asks insightful questions.
-The guest should be an expert on the topic who provides detailed answers.
+The script should be well-structured with a clear introduction, body covering key points, and conclusion.
+Make it conversational, informative, and engaging for listeners.
 
-Format the script exactly like this example:
-HOST: Welcome to our podcast! Today we're discussing [topic]. I'm your host, and I'm joined by our expert guest.
-GUEST: Thanks for having me! I'm excited to talk about [topic] today.
-HOST: [Question]
-GUEST: [Answer]
-
-The script should be well-structured with a clear introduction, body with several Q&A exchanges, and conclusion.
-Make it conversational, informative, and engaging for listeners.`
+Do NOT include speaker markers like "HOST:". Just provide the monologue text directly.
+IMPORTANT: Do NOT include any "<think>" blocks or internal thought processes in the script. Only include the actual monologue.`
           },
           {
             role: "user",
-            content: `Create a podcast script based on the following document summary and Q&A:
+            content: `Create a podcast monologue script based on the following document summary and Q&A:
             
 Document Context:
-${this.context.substring(0, 1000)}...
+${state.context.substring(0, 1000)}...
 
-Questions and Answers:
+Key Points from Q&A (Treat these as information the host knows):
 ${qaPairs}
 
-Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the script is engaging, conversational, and covers the key points from the Q&A above. Limit the script to about 3 minutes of speaking time (about 450-500 words).`
+Generate a natural-sounding podcast monologue delivered by a single host. Make sure the script is engaging, conversational, and covers the key points derived from the Q&A above. Limit the script to about 3 minutes of speaking time (about 450-500 words).
+
+IMPORTANT: Do NOT include any "<think>" blocks or speaker markers. Output only the monologue text.`
           }
         ],
         temperature: 0.7,
@@ -250,15 +266,20 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
       
       const script = response.choices[0]?.message?.content || "";
       
-      if (script.length < 50) {
+      // Remove any remaining thinking blocks that might be in the generated script
+      const cleanScript = script.replace(/<think>[\s\S]*?<\/think>/g, '')
+                               .replace(/<think>[\s\S]*/g, '')
+                               .trim();
+      
+      if (cleanScript.length < 50) {
         throw new Error("Generated script is too short or empty");
       }
       
-      console.log(`[PodcastAgent] Successfully generated script of length ${script.length}`);
-      console.log(`[PodcastAgent] Script preview: "${script.substring(0, 200)}..."`);
+      console.log(`[PodcastAgent] Successfully generated script of length ${cleanScript.length}`);
+      console.log(`[PodcastAgent] Script preview: "${cleanScript.substring(0, 200)}..."`);
       
       return { 
-        script,
+        script: cleanScript,
         status: "Script generated successfully"
       };
     } catch (error) {
@@ -272,10 +293,11 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
   
   /**
    * Node for generating audio from the podcast script
-   * This uses Kokoro JS for text-to-speech conversion
+   * This previously used Kokoro JS for text-to-speech conversion
+   * Now it just creates a placeholder for client-side TTS
    */
   private async generateAudioNode(state: PodcastState) {
-    console.log("[PodcastAgent] Generating audio from script");
+    console.log("[PodcastAgent] Skipping audio generation (Kokoro removed)");
     
     try {
       // Verify we have a script
@@ -283,25 +305,13 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
         throw new Error("No script available for audio generation");
       }
       
-      // Use the kokoro-service to generate audio
-      const { generatePodcastAudio } = await import('./kokoro-service');
-      
-      // Generate audio from the script
-      const audioBuffer = await generatePodcastAudio(state.script);
-      
-      if (!audioBuffer || audioBuffer.length === 0) {
-        throw new Error("Failed to generate audio - received empty buffer");
-      }
-      
-      console.log(`[PodcastAgent] Successfully generated audio of size ${audioBuffer.length} bytes`);
-      
-      return { 
-        status: "Audio generated successfully",
-      };
+      // Create a placeholder buffer - client-side TTS will be implemented separately
+      const dummyBuffer = Buffer.from("Client-side TTS placeholder");
+      return dummyBuffer;
     } catch (error) {
-      console.error("[PodcastAgent] Error generating audio:", error);
+      console.error("[PodcastAgent] Error in audio node:", error);
       return { 
-        error: `Error generating audio: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Error in audio node: ${error instanceof Error ? error.message : String(error)}`,
         status: "Error in audio generation",
       };
     }
@@ -319,13 +329,8 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
         throw new Error("No script available for storage");
       }
       
-      // Use the kokoro-service to generate audio if not already done
-      const { generatePodcastAudio } = await import('./kokoro-service');
-      const audioBuffer = await generatePodcastAudio(state.script);
-      
-      if (!audioBuffer || audioBuffer.length === 0) {
-        throw new Error("Failed to generate audio for storage - received empty buffer");
-      }
+      // No need to generate audio server-side, we'll use browser-based TTS
+      const dummyBuffer = Buffer.from("Client-side TTS will be used");
       
       // Use the podcast-storage service to store the audio
       const { storePodcastAudio } = await import('./podcast-storage');
@@ -337,7 +342,7 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
       // Store the audio and get the CID
       const result = await storePodcastAudio(
         this.documentId,
-        audioBuffer,
+        dummyBuffer,
         state.script,
         title
       );
@@ -362,7 +367,7 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
   }
   
   /**
-   * Generate a podcast for the document
+   * Generate a podcast for the document (script and audio)
    * @returns The generated podcast
    */
   async generatePodcast() {
@@ -397,6 +402,45 @@ Generate a natural-sounding podcast script with a HOST and GUEST. Make sure the 
         script: "",
         audioUrl: null,
         error: `Error in podcast generation: ${error instanceof Error ? error.message : String(error)}`,
+        status: "Error"
+      };
+    }
+  }
+
+  /**
+   * Generate only the podcast script, no audio
+   * @returns The generated script
+   */
+  async generatePodcastScript() {
+    console.log(`[PodcastAgent] Starting podcast script generation for document ${this.documentId}`);
+    
+    try {
+      // Run the script-only graph
+      const result = await this.scriptGraph.invoke({
+        documentId: this.documentId,
+        context: this.context,
+        questions: [],
+        answers: [],
+        script: "",
+        audioUrl: null,
+        error: null,
+        status: "Starting"
+      });
+      
+      console.log(`[PodcastAgent] Podcast script generation complete with status: ${result.status}`);
+      
+      return {
+        documentId: this.documentId,
+        script: result.script,
+        error: result.error,
+        status: result.status
+      };
+    } catch (error) {
+      console.error(`[PodcastAgent] Error in podcast script generation:`, error);
+      return {
+        documentId: this.documentId,
+        script: "",
+        error: `Error in podcast script generation: ${error instanceof Error ? error.message : String(error)}`,
         status: "Error"
       };
     }

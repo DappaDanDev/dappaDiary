@@ -6,6 +6,19 @@ import Image from 'next/image';
 // import { createNewConversation, addMessageToConversation } from '@/lib/storacha';
 import { FileUploadDemo } from '@/components/file-upload-demo';
 import { PodcastPlayer } from '@/components/podcast-player';
+// Remove lazy imports
+// const KokoroTtsPlayer = lazy(() => import('@/components/KokoroTtsPlayer').then(mod => ({ 
+//   default: mod.KokoroTtsPlayer 
+// })));
+
+// Replace with a simpler approach
+import dynamic from 'next/dynamic';
+
+// Only import the TTS player on the client side with no SSR
+const SimpleTtsPlayer = dynamic(
+  () => import('@/components/SimpleTtsPlayer'),
+  { ssr: false }
+);
 
 interface Message {
   id: string;
@@ -22,10 +35,10 @@ interface ChatConversation {
 }
 
 interface PodcastInfo {
-  id: string;
+  id?: string;
   documentId: string;
-  audioCid: string;
-  audioUrl: string;
+  audioCid?: string;
+  audioUrl?: string;
   script: string;
 }
 
@@ -377,7 +390,7 @@ export default function Home() {
       const data = await response.json();
       console.log('Podcast generated:', data);
 
-      // Set podcast info for playback
+      // Set podcast info for browser TTS generation and playback
       setPodcastInfo(data.podcast);
     } catch (error) {
       console.error('Error generating podcast:', error);
@@ -481,11 +494,20 @@ export default function Home() {
               {/* Podcast Player */}
               {podcastInfo && (
                 <div className="mt-8">
-                  <PodcastPlayer
-                    audioUrl={podcastInfo.audioUrl}
-                    title={`Podcast for ${uploadedFile?.name || 'document'}`}
-                    script={podcastInfo.script}
-                  />
+                  {podcastInfo.audioUrl ? (
+                    <PodcastPlayer
+                      audioUrl={podcastInfo.audioUrl}
+                      title={`Podcast for ${uploadedFile?.name || 'document'}`}
+                      script={podcastInfo.script}
+                    />
+                  ) : (
+                    <div className="mt-4">
+                      <SimpleTtsPlayer
+                        script={podcastInfo.script || ''}
+                        title={`Podcast for ${uploadedFile?.name || 'document'}`}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -494,11 +516,20 @@ export default function Home() {
               {/* Show podcast player above messages if available */}
               {podcastInfo && (
                 <div className="mb-8">
-                  <PodcastPlayer
-                    audioUrl={podcastInfo.audioUrl}
-                    title={`Podcast for ${uploadedFile?.name || 'document'}`}
-                    script={podcastInfo.script}
-                  />
+                  {podcastInfo.audioUrl ? (
+                    <PodcastPlayer
+                      audioUrl={podcastInfo.audioUrl}
+                      title={`Podcast for ${uploadedFile?.name || 'document'}`}
+                      script={podcastInfo.script}
+                    />
+                  ) : (
+                    <div className="mt-4">
+                      <SimpleTtsPlayer
+                        script={podcastInfo.script || ''}
+                        title={`Podcast for ${uploadedFile?.name || 'document'}`}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             
