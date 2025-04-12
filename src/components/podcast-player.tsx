@@ -112,14 +112,14 @@ export function PodcastPlayer({ audioUrl, title, script }: PodcastPlayerProps) {
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   
   return (
-    <div className="w-full rounded-lg border border-gray-200 bg-white p-4 shadow-md dark:border-gray-700 dark:bg-gray-800">
-      <h3 className="mb-2 text-lg font-medium text-gray-900 dark:text-white">
+    <div className="w-full rounded-lg border border-purple-200 bg-white p-4 shadow-md">
+      <h3 className="mb-2 text-lg font-medium text-purple-700">
         {title}
       </h3>
       
       {/* Display error if any */}
       {error && (
-        <div className="mb-4 rounded-lg bg-red-100 p-3 text-sm text-red-700 dark:bg-red-200 dark:text-red-800">
+        <div className="mb-4 rounded-lg bg-red-100 p-3 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -130,7 +130,7 @@ export function PodcastPlayer({ audioUrl, title, script }: PodcastPlayerProps) {
         <button
           onClick={togglePlayPause}
           disabled={isLoading || !!error}
-          className="mr-2 inline-flex items-center rounded-lg bg-blue-700 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:bg-gray-400 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+          className="mr-2 inline-flex items-center rounded-full bg-[#A9C99F] hover:bg-[#95B386] px-4 py-2 text-center text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-[#95B386] disabled:bg-gray-400"
         >
           {isLoading ? (
             <span>Loading...</span>
@@ -152,7 +152,7 @@ export function PodcastPlayer({ audioUrl, title, script }: PodcastPlayerProps) {
         </button>
         
         {/* Time display */}
-        <span className="text-sm text-gray-500 dark:text-gray-400">
+        <span className="text-sm text-purple-600">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
       </div>
@@ -161,10 +161,10 @@ export function PodcastPlayer({ audioUrl, title, script }: PodcastPlayerProps) {
       <div 
         ref={progressBarRef}
         onClick={handleSeek}
-        className="mb-4 h-2 w-full cursor-pointer rounded-full bg-gray-200 dark:bg-gray-700"
+        className="mb-4 h-2 w-full cursor-pointer rounded-full bg-purple-100"
       >
         <div 
-          className="h-2 rounded-full bg-blue-600 dark:bg-blue-500"
+          className="h-2 rounded-full bg-purple-600"
           style={{ width: `${progressPercent}%` }}
         />
       </div>
@@ -173,10 +173,10 @@ export function PodcastPlayer({ audioUrl, title, script }: PodcastPlayerProps) {
       {script && (
         <div className="mt-4">
           <details>
-            <summary className="cursor-pointer text-sm font-medium text-gray-900 dark:text-white">
+            <summary className="cursor-pointer text-sm font-medium text-purple-700">
               Show Podcast Script
             </summary>
-            <div className="mt-2 max-h-60 overflow-y-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+            <div className="mt-2 max-h-60 overflow-y-auto rounded-lg bg-purple-50 p-4 text-sm text-purple-900">
               <pre className="whitespace-pre-wrap font-sans">{script}</pre>
             </div>
           </details>

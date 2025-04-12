@@ -90,29 +90,29 @@ export default function SimpleTtsPlayer({ script, title }: SimpleTtsPlayerProps)
   // Server-side render placeholder
   if (!isBrowser) {
     return (
-      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 shadow-sm">
+      <div className="rounded-lg border border-purple-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-center h-32">
-          <p className="text-gray-500">Loading TTS Player...</p>
+          <p className="text-purple-500">Loading TTS Player...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 shadow-sm">
+    <div className="rounded-lg border border-purple-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col space-y-4">
         {title && (
-          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">{title}</h3>
+          <h3 className="text-lg font-medium text-purple-700">{title}</h3>
         )}
         
         {error ? (
-          <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-4">
+          <div className="rounded-md bg-red-50 p-4">
             <div className="flex">
-              <div className="text-red-700 dark:text-red-300">
+              <div className="text-red-700">
                 <p className="text-sm">{error}</p>
                 <button
                   onClick={() => setError(null)}
-                  className="mt-2 text-sm font-medium text-red-700 dark:text-red-300 hover:text-red-600 dark:hover:text-red-200"
+                  className="mt-2 text-sm font-medium text-red-700 hover:text-red-600"
                 >
                   Try again
                 </button>
@@ -126,14 +126,14 @@ export default function SimpleTtsPlayer({ script, title }: SimpleTtsPlayerProps)
                 {!isPlaying ? (
                   <button
                     onClick={playAudio}
-                    className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="inline-flex items-center justify-center rounded-full bg-[#A9C99F] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#95B386] focus:outline-none focus:ring-2 focus:ring-[#95B386] focus:ring-offset-2"
                   >
                     Play Audio
                   </button>
                 ) : (
                   <button
                     onClick={stopSpeaking}
-                    className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    className="inline-flex items-center justify-center rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
                   >
                     Stop
                   </button>
@@ -141,7 +141,7 @@ export default function SimpleTtsPlayer({ script, title }: SimpleTtsPlayerProps)
                 
                 <button
                   onClick={() => setShowTranscript(!showTranscript)}
-                  className="ml-2 inline-flex items-center justify-center rounded-md bg-gray-200 dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
+                  className="ml-2 inline-flex items-center justify-center rounded-full bg-purple-100 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-200"
                 >
                   {showTranscript ? 'Hide Transcript' : 'Show Transcript'}
                 </button>
@@ -150,16 +150,16 @@ export default function SimpleTtsPlayer({ script, title }: SimpleTtsPlayerProps)
 
             {isPlaying && (
               <div className="mt-2 flex items-center">
-                <div className="animate-pulse mr-2 h-2 w-2 rounded-full bg-blue-500"></div>
-                <div className="animate-pulse delay-75 mr-2 h-2 w-2 rounded-full bg-blue-500"></div>
-                <div className="animate-pulse delay-150 mr-2 h-2 w-2 rounded-full bg-blue-500"></div>
-                <span className="text-sm text-gray-500">Speaking...</span>
+                <div className="animate-pulse mr-2 h-2 w-2 rounded-full bg-purple-500"></div>
+                <div className="animate-pulse delay-75 mr-2 h-2 w-2 rounded-full bg-purple-500"></div>
+                <div className="animate-pulse delay-150 mr-2 h-2 w-2 rounded-full bg-purple-500"></div>
+                <span className="text-sm text-purple-500">Speaking...</span>
               </div>
             )}
 
             {showTranscript && (
-              <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-800 max-h-60 overflow-y-auto">
-                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{script}</p>
+              <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200 max-h-60 overflow-y-auto">
+                <p className="text-sm text-purple-700 whitespace-pre-wrap">{script}</p>
               </div>
             )}
           </>

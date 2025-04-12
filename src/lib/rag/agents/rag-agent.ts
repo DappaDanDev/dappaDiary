@@ -8,7 +8,6 @@ import { AIMessage, HumanMessage, SystemMessage, BaseMessage } from '@langchain/
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
-import { MemorySaver } from '@langchain/langgraph';
 import { findRelevantChunks } from '../document-processor';
 import { processRagQuery } from '../lilypad-service';
 import { ChatOpenAI } from '@langchain/openai';
@@ -64,9 +63,6 @@ function _getType(message: BaseMessage): string {
  * Create a RAG agent that processes queries using LangGraphJS
  */
 export function createRagAgent(documentId: string) {
-  // Create a memory saver for the agent
-  const memory = new MemorySaver();
-
   // We'll use the OpenAI ChatModel with the Lilypad endpoint
   const model = new ChatOpenAI({
     configuration: {
@@ -83,33 +79,17 @@ from a document. Your goal is to provide accurate information based on the conte
 If the answer isn't in the context, say you don't know. Don't make up information.`
   });
 
-  // Create a simple graph with just the memory functionality
-  // This bypasses the complex LangGraph structure but still provides the same functionality
+  // Create a simple graph with just the core functionality
   const graph = {
-    memory,
     async invoke(state: any) {
       const messages = state.messages || [];
       const query = messages[0]?.content || '';
-      
-      // Store the initial state
-      await memory.put({
-        messages,
-        documentId,
-        context: null
-      });
       
       try {
         // Retrieve context
         const context = await retrieveContext.invoke({
           documentId,
           query
-        });
-        
-        // Store state with context
-        await memory.put({
-          messages,
-          documentId,
-          context
         });
         
         // Generate response using Lilypad

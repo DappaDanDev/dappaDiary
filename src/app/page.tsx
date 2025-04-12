@@ -14,6 +14,16 @@ import { PodcastPlayer } from '@/components/podcast-player';
 // Replace with a simpler approach
 import dynamic from 'next/dynamic';
 
+// Import Google fonts - adding Quicksand for cute/fun feel
+import { Quicksand } from 'next/font/google';
+
+// Configure font
+const quicksand = Quicksand({ 
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['300', '400', '500', '700'],
+});
+
 // Only import the TTS player on the client side with no SSR
 const SimpleTtsPlayer = dynamic(
   () => import('@/components/SimpleTtsPlayer'),
@@ -409,21 +419,24 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="sticky top-0 z-10 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-            DappaDiary - NotebookLM Recreation
+    <div className={`flex flex-col min-h-screen bg-white ${quicksand.className}`}>
+      <header className="sticky top-0 z-10 bg-white border-b border-purple-200 p-4">
+        <div className="flex flex-col items-center justify-center text-center py-2">
+          <h1 className="text-3xl md:text-4xl font-bold text-purple-600 tracking-tight">
+            ✨ DappaDiary ✨
           </h1>
-          <div className="flex items-center space-x-4">
+          <p className="text-md md:text-lg text-purple-400 mt-1">Your Own NotebookLM</p>
+          
+          {/* Status indicators */}
+          <div className="flex items-center space-x-3 mt-2">
             {isRagMode && (
-              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full dark:bg-blue-900 dark:text-blue-200">
-                RAG Mode Active
+              <span className="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full border border-purple-200 shadow-sm">
+                🧠 RAG Mode Active
               </span>
             )}
             {conversationCid && (
-              <div className="text-xs text-gray-600 dark:text-gray-400">
-                CID: {conversationCid.substring(0, 10)}...
+              <div className="text-xs text-purple-500 px-3 py-1 bg-purple-50 rounded-full border border-purple-200 shadow-sm">
+                📝 ID: {conversationCid.substring(0, 10)}...
               </div>
             )}
           </div>
@@ -435,17 +448,17 @@ export default function Home() {
           {messages.length === 0 ? (
             <div className="text-center py-10 space-y-8">
               <div>
-                <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">
-                  Start a conversation with DappaDiary
+                <h2 className="text-xl font-semibold text-purple-600">
+                  Start a magical conversation with DappaDiary!
                 </h2>
-                <p className="text-gray-500 dark:text-gray-400 mt-2">
+                <p className="text-gray-500 mt-2">
                   Powered by Lilypad LLM and stored with Storacha
                 </p>
               </div>
               
               <div className="mt-6">
-                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-4">
-                  Upload a document to get started with RAG
+                <h3 className="text-lg font-medium text-purple-600 mb-4">
+                  Drop your precious document here for some AI magic! ✨📚
                 </h3>
                 <FileUploadDemo 
                   onFileUpload={handleFileUpload} 
@@ -454,12 +467,12 @@ export default function Home() {
               </div>
               
               {uploadedFile && documentId && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-700 dark:text-blue-300">RAG Mode Activated</h4>
-                  <p className="text-sm text-blue-600 dark:text-blue-400">
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-purple-700">RAG Mode Activated</h4>
+                  <p className="text-sm text-purple-600">
                     Using document: {uploadedFile.name}
                   </p>
-                  <p className="text-xs text-blue-500 dark:text-blue-500 mt-1">
+                  <p className="text-xs text-purple-500 mt-1">
                     Document ID: {documentId.substring(0, 8)}...
                   </p>
                   
@@ -468,7 +481,7 @@ export default function Home() {
                     <button
                       onClick={generatePodcast}
                       disabled={isPodcastGenerating}
-                      className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md flex items-center justify-center w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="bg-[#A9C99F] hover:bg-[#95B386] text-white py-2 px-4 rounded-full flex items-center justify-center w-full disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                     >
                       {isPodcastGenerating ? (
                         <>
@@ -539,13 +552,13 @@ export default function Home() {
                   <div key={message.id}>
                     {message.role === 'user' ? (
                       <div className="flex justify-end">
-                        <div className="rounded-lg bg-blue-600 px-4 py-2 text-white">
+                        <div className="rounded-2xl bg-white px-4 py-3 text-purple-700 border-2 border-purple-300 shadow-sm">
                           {message.content}
                         </div>
                       </div>
                     ) : (
                       <div className="flex justify-start">
-                        <div className="rounded-lg bg-gray-200 px-4 py-2 text-gray-800">
+                        <div className="rounded-2xl bg-purple-600 px-4 py-3 text-white shadow-sm">
                           {message.content}
                         </div>
                       </div>
@@ -553,10 +566,10 @@ export default function Home() {
                   </div>
                 ))}
                 {isLoading && (
-                  <div className="flex items-center space-x-2 text-gray-500">
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-gray-400"></div>
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-gray-400 delay-75"></div>
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-gray-400 delay-150"></div>
+                  <div className="flex items-center space-x-2 text-purple-500">
+                    <div className="h-2 w-2 animate-pulse rounded-full bg-purple-400"></div>
+                    <div className="h-2 w-2 animate-pulse rounded-full bg-purple-400 delay-75"></div>
+                    <div className="h-2 w-2 animate-pulse rounded-full bg-purple-400 delay-150"></div>
                     <span className="text-sm">AI is thinking...</span>
                   </div>
                 )}
@@ -568,7 +581,7 @@ export default function Home() {
                   <button
                     onClick={generatePodcast}
                     disabled={isPodcastGenerating}
-                    className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-[#A9C99F] hover:bg-[#95B386] text-white py-2 px-6 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                   >
                     {isPodcastGenerating ? (
                       <>
@@ -595,24 +608,34 @@ export default function Home() {
         </div>
       </main>
 
-      <footer className="sticky bottom-0 z-10 bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 p-4">
+      <footer className="sticky bottom-0 z-10 bg-white border-t border-gray-200 p-4">
         <form onSubmit={sendMessage} className="max-w-3xl mx-auto flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={isRagMode && uploadedFile 
-              ? `Ask about ${uploadedFile.name}...` 
-              : "Type your message..."}
-            className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200"
+              ? `Ask anything about ${uploadedFile.name}...` 
+              : "Type your magical question...✨"}
+            className="flex-1 p-3 border border-purple-200 rounded-full bg-white text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-300"
             disabled={isLoading}
           />
           <button
             type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+            className="bg-[#A9C99F] hover:bg-[#95B386] text-white px-6 py-3 rounded-full disabled:opacity-50 shadow-md flex items-center"
             disabled={isLoading}
           >
-            {isLoading ? 'Sending...' : 'Send'}
+            {isLoading ? (
+              <span className="flex items-center">
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Working...
+              </span>
+            ) : (
+              <>Send ✨</>
+            )}
           </button>
         </form>
       </footer>

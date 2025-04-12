@@ -174,16 +174,14 @@ export class StorachaRAGFlow {
         {
           role: "system" as const,
           content: `You are a helpful AI assistant that answers questions based only on the provided context. 
-If the answer isn't in the context, admit you don't know. Don't make up information.`
+If the answer isn't in the context, admit you don't know. Don't make up information.
+
+CONTEXT:
+${formattedContext}`
         },
         {
           role: "user" as const,
-          content: `Use the following context to answer my question. Only use information from these sources.
-
-CONTEXT:
-${formattedContext}
-
-QUESTION: ${state.question}`
+          content: `${state.question}`
         }
       ];
       
