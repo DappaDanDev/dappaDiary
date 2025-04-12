@@ -263,15 +263,78 @@ export async function findRelevantChunks(
     // Get the chunk map CID
     const chunkMapCid = documentIndices[documentId].chunkMap;
     
-    // Fetch the chunk map
-    const response = await fetch(`https://${chunkMapCid}.ipfs.dweb.link`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch chunk map: ${response.statusText}`);
+    // Fetch the chunk map with retry logic
+    console.log(`Fetching chunk map from IPFS: ${chunkMapCid}`);
+    let chunkCids;
+    let retryCount = 0;
+    const maxRetries = 3;
+    const baseDelay = 1000; // Start with 1 second delay
+
+    while (retryCount < maxRetries) {
+      try {
+        // Add a timeout option to abort long-running requests
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        const response = await fetch(`https://${chunkMapCid}.ipfs.dweb.link`, {
+          signal: controller.signal,
+          // Increase the timeout and set cache policy
+          cache: 'force-cache' // Try to use cached version if available
+        });
+        
+        // Clear timeout
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch chunk map: ${response.statusText}`);
+        }
+        
+        // Parse the chunk map JSON
+        chunkCids = await response.json();
+        break; // Success, exit the retry loop
+      } catch (error) {
+        retryCount++;
+        console.warn(`Attempt ${retryCount}/${maxRetries} failed to fetch chunk map: ${error instanceof Error ? error.message : String(error)}`);
+        
+        if (retryCount >= maxRetries) {
+          console.error(`All ${maxRetries} attempts failed to fetch chunk map`);
+          
+          // Try alternative gateway as a fallback
+          try {
+            console.log(`Trying alternative IPFS gateway...`);
+            const fallbackController = new AbortController();
+            const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 15000); // 15 second timeout
+            
+            const fallbackResponse = await fetch(`https://w3s.link/ipfs/${chunkMapCid}`, {
+              signal: fallbackController.signal,
+              cache: 'force-cache'
+            });
+            
+            clearTimeout(fallbackTimeoutId);
+            
+            if (!fallbackResponse.ok) {
+              throw new Error(`Fallback gateway also failed: ${fallbackResponse.statusText}`);
+            }
+            
+            chunkCids = await fallbackResponse.json();
+            console.log(`Successfully retrieved chunk map from fallback gateway`);
+            break;
+          } catch (fallbackError) {
+            console.error(`Fallback gateway also failed:`, fallbackError);
+            throw error; // Re-throw the original error
+          }
+        }
+        
+        // Exponential backoff
+        const delay = baseDelay * Math.pow(2, retryCount - 1);
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
     
-    // Parse the chunk map JSON
-    const chunkCids = await response.json();
+    if (!chunkCids) {
+      throw new Error('Failed to retrieve chunk map after multiple attempts');
+    }
     
     // Find relevant chunks using our Storacha implementation
     return await findRelevantChunksInStoracha(

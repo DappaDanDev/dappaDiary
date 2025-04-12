@@ -120,9 +120,9 @@ export class PodcastAgent {
     
     try {
       // Start with standard questions
-      let questions = [...STANDARD_PODCAST_QUESTIONS];
+      let allPossibleQuestions = [...STANDARD_PODCAST_QUESTIONS];
       
-      // Add document-specific questions using the model
+      // Attempt to generate custom questions, but with strict limits
       if (this.context && this.context.length > 0) {
         try {
           const response = await lilypadClient.chat.completions.create({
@@ -130,7 +130,7 @@ export class PodcastAgent {
             messages: [
               {
                 role: "system",
-                content: "You are a podcast host preparing to interview a guest about a document. Generate 3 additional specific, insightful questions based on the document summary provided."
+                content: "You are a podcast host preparing to interview a guest about a document. Generate 2-3 specific, insightful questions based on the document summary provided."
               },
               {
                 role: "user",
@@ -149,7 +149,8 @@ export class PodcastAgent {
 
           if (customQuestions.length > 0) {
             console.log(`[PodcastAgent] Generated ${customQuestions.length} custom questions`);
-            questions = [...questions, ...customQuestions];
+            // Add custom questions to the pool of possible questions
+            allPossibleQuestions = [...allPossibleQuestions, ...customQuestions];
           }
         } catch (error) {
           console.warn("[PodcastAgent] Error generating custom questions, using standard ones:", error);
@@ -157,9 +158,27 @@ export class PodcastAgent {
         }
       }
       
-      console.log(`[PodcastAgent] Will ask ${questions.length} questions to the RAG Agent`);
+      // Select exactly 5 questions
+      let finalQuestions: string[] = [];
+      
+      // Always include the first standard question (what is this document about)
+      // as it's the most fundamental
+      finalQuestions.push(STANDARD_PODCAST_QUESTIONS[0]);
+      
+      // Remove the first question from the pool to avoid duplication
+      const remainingQuestions = allPossibleQuestions.filter(q => q !== STANDARD_PODCAST_QUESTIONS[0]);
+      
+      // Randomly select the remaining questions to get a total of 5
+      // This ensures a mix of standard and custom questions
+      while (finalQuestions.length < 5 && remainingQuestions.length > 0) {
+        const randomIndex = Math.floor(Math.random() * remainingQuestions.length);
+        finalQuestions.push(remainingQuestions[randomIndex]);
+        remainingQuestions.splice(randomIndex, 1);
+      }
+      
+      console.log(`[PodcastAgent] Selected ${finalQuestions.length} questions to ask the RAG Agent`);
       return { 
-        questions,
+        questions: finalQuestions,
         status: "Questions generated"
       };
     } catch (error) {
@@ -188,29 +207,48 @@ export class PodcastAgent {
       
       // Ask each question to the RAG agent
       const answers: string[] = [];
-      for (const question of state.questions) {
+      const failedQuestions: number[] = [];
+      
+      for (let i = 0; i < state.questions.length; i++) {
+        const question = state.questions[i];
         console.log(`[PodcastAgent] Asking RAG Agent: "${question}"`);
+        
         try {
           const answer = await queryRagAgent(ragAgent, question);
           console.log(`[PodcastAgent] RAG Agent response: "${answer.substring(0, 100)}..."`);
           answers.push(answer);
         } catch (error) {
           console.error(`[PodcastAgent] Error asking RAG Agent: ${error}`);
-          answers.push(`[Error: Could not get an answer for this question due to: ${error}]`);
+          // Record that this question failed
+          failedQuestions.push(i);
+          // Add error message as the answer
+          answers.push(`[Error: Could not retrieve information for this question due to: ${error}]`);
         }
       }
       
-      console.log(`[PodcastAgent] Received ${answers.length} answers from RAG Agent`);
+      if (failedQuestions.length > 0) {
+        console.warn(`[PodcastAgent] ${failedQuestions.length}/${state.questions.length} questions failed.`);
+      }
+      
+      console.log(`[PodcastAgent] Received ${answers.length} answers (${failedQuestions.length} had errors)`);
+      
+      // If all questions failed, treat it as an error
+      if (failedQuestions.length === state.questions.length) {
+        throw new Error("All RAG queries failed. Cannot proceed with podcast generation.");
+      }
       
       return { 
         answers,
-        status: "RAG Agent queried successfully"
+        status: failedQuestions.length > 0 
+          ? `RAG Agent queried with ${failedQuestions.length} failed questions` 
+          : "RAG Agent queried successfully"
       };
     } catch (error) {
       console.error("[PodcastAgent] Error asking RAG Agent:", error);
       return { 
         error: `Error asking RAG Agent: ${error instanceof Error ? error.message : String(error)}`,
-        status: "Error querying RAG Agent"
+        status: "Error querying RAG Agent",
+        answers: []
       };
     }
   }
