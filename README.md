@@ -1,6 +1,6 @@
 # DappaDiary - Your Own Notebook LM
 
-[!Repo Banner](images/repo-banner.png)
+![Repo Banner](repo-banner.png)
 
 
  ## Description 
@@ -18,7 +18,7 @@ For this hackathon, I tried to capture two key features of the Notebook LM and u
 
 ## How I built it - Tech Stack 
 
-![Architecture](images/arch-diagram.png)
+![Architecture](arch-diagram.png)
 
 ### Sponsor Technologies 
 **Lilypad** - I used Lilypad for two AI Agents in this project. 
