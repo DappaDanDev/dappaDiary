@@ -39,6 +39,8 @@ If a user requests a podcast, the Podcast Agent is started and it uses the RAG A
 
 **Hugging Face** - I used the Hugging Face Embeddings Model to create the vector embeddings of the uploaded documents. The model is run on the host machine so it doesn not send anything via an API to OpenAI. 
 
+**LangGraph.js** - For Agent coordination that is used for RAG and Podcast genreation workflows. 
+
 **Synthetic Voice API** - I used the Synthetic Voice API to generate the audio for the podcast.  This is used to generate the audio for the podcast script. 
 
 
