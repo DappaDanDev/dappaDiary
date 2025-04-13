@@ -21,7 +21,8 @@ For this hackathon, I tried to capture two key features of the Notebook LM and u
 ![Architecture](arch-diagram.png)
 
 ### Sponsor Technologies 
-**Lilypad** - I used Lilypad for two AI Agents in this project. 
+**Lilypad** - I used Lilypad for two AI Agents in this project:
+
  1 ) RAG Agent that uses the Llama3.1 Model to power the chat feature for the user.  This agent is also resposible for retereving the relevant chunks that are strored in the Storacha vector database.  This powers the research assistant feature by giving answers in the context of the uploaded documents rather than a generic response based on the LLM's training data.  
 
 2) Podcast Agent - This agent is responsible for generating the podcast script and audio based on the uploaded documents.  It usese the Deepseek LLM on Lilypad to generate the script. This is done by collborating with the RAG Agent  by asking it questions and then using those answers to genreate an engaing podcast script. The advantage of using Deepseek is the generate more thoughtful questions rather than a generic script. 
